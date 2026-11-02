@@ -56,8 +56,15 @@ Module.register('MMM-Face-Reco-DNN', {
     cameraLores: false,
     cameraLoresFormat: 'YUV420',
     cameraFrameRate: null,
+    // Apply only advertised controls; fixed-focus cameras are unchanged.
+    cameraAutofocus: 'default',
+    cameraLensPosition: null,
+    cameraExposureMode: 'normal',
     // Zero keeps OpenCV's default; a positive count can reserve CPU headroom.
     opencvThreads: 0,
+    // Bound early worker failures; retries wait for the previous process to close.
+    workerRestartDelay: 1000,
+    workerRestartLimit: 3,
     previewQuality: 95,
     // how fast in ms should the modules hide and show (face effect)
     animationSpeed: 0,
@@ -98,6 +105,7 @@ Module.register('MMM-Face-Reco-DNN', {
   users: [],
   userClasses: [],
   image: '',
+  workerAvailable: null,
 
   // ----------------------------------------------------------------------------------------------------
   start: function () {
@@ -139,7 +147,7 @@ Module.register('MMM-Face-Reco-DNN', {
     var newClassList;
 
     this.config.debug && Log.log('User list before login:' + this.users);
-    Log.log('Logged in user:' + name);
+    Log.log('Face-recognition session opened.');
     // user not currently logged in so add them to the list of logged in users
     this.users.push(name);
     this.config.debug && Log.log('User list after login:' + this.users);
@@ -215,7 +223,7 @@ Module.register('MMM-Face-Reco-DNN', {
   // ----------------------------------------------------------------------------------------------------
   logout_user: function (name) {
     this.config.debug && Log.log('User list before logout:' + this.users);
-    Log.log('Logged out user:' + name);
+    Log.log('Face-recognition session closed.');
 
     // just double check the the user we are logging out is actually logged in
     if (this.users.includes(name)) {
@@ -394,81 +402,107 @@ Module.register('MMM-Face-Reco-DNN', {
     }
   },
   // ----------------------------------------------------------------------------------------------------
-  socketNotificationReceived: function (notification, payload) {
-    var self = this;
-    var user;
+  reset_sessions: function () {
+    // Failure must not wait for the normal disappearance/logout delay.
+    const previousUsers = this.users.slice();
+    const previousClasses = this.get_class_set(this.userClasses);
+    Object.values(this.timouts).forEach(timer => clearTimeout(timer));
+    this.timouts = {};
+    this.users = [];
+    this.userClasses = [];
+    this.image = '';
+    const noFaceClasses = this.config.classes_noface || [this.config.noFaceClass, this.config.defaultClass, this.config.alwaysClass];
+    this.hide_modules(previousClasses, noFaceClasses);
+    this.show_modules(noFaceClasses, previousClasses);
+    previousUsers.forEach(user => this.sendNotification('USERS_LOGOUT_MODULES', user));
+    if (previousUsers.length > 0) this.sendNotification('USERS_LOGOUT', previousUsers);
+    this.updateDom(0);
+  },
 
+  login_users: function (users) {
+    var user;
+    var loginCount = 0;
+    for (user of users) {
+      if (user != null) {
+        // if there are currently no users logged in OR we allow multiple users
+        this.config.debug && Log.log('Number of logged in users:' + this.users.length + ', Allowed Number of Users:' + this.config.multiUser);
+        if (this.users.length === 0 || this.users.length < this.config.multiUser) {
+          // check if the user is already logged in
+          if (!this.users.includes(user)) {
+            // run the login procedure
+            this.login_user(user);
+            // increment the counter
+            loginCount++;
+          } else {
+            this.config.debug && Log.log('Detected ' + user + ' again.');
+          }
+        } else {
+          this.config.debug &&
+            Log.log(
+              'Detected a login event for ' + user + ' but multiple concurrent logins is limited to ' + this.config.multiUser + ' and ' + this.users + ' is already logged in.',
+            );
+        }
+
+        // clear any timeouts the user might have so that they stay logged in
+        if (this.timouts[user] != null) {
+          this.config.debug && Log.log('Clearing timeouts for ' + user);
+          this.config.debug && Log.log('Remaining timeouts BEFORE:');
+          this.config.debug && Log.log(this.timouts);
+          clearTimeout(this.timouts[user]);
+          delete this.timouts[user];
+          this.config.debug && Log.log('Remaining timeouts AFTER:');
+          this.config.debug && Log.log(this.timouts);
+        }
+      }
+    }
+
+    if (loginCount > 0) {
+      // We still need to broadcast MM notification for backward compatability.
+      this.config.debug && Log.log('Detected ' + loginCount + ' logins.');
+      this.sendNotification('USERS_LOGIN', users);
+    }
+  },
+
+  logout_users: function (users) {
+    var self = this;
+    for (const user of users) {
+      if (user != null) {
+        // see if user is even logged in, since you can only log out if you are actually logged in
+        if (this.users.includes(user)) {
+          this.config.debug && Log.log('Setting logout timer for ' + user + ' for ' + this.config.logoutDelay + 'ms');
+          if (this.timouts[user] != null) clearTimeout(this.timouts[user]);
+          this.timouts[user] = setTimeout(function () {
+            delete self.timouts[user];
+            if (!self.users.includes(user)) return;
+            self.sendNotification('USERS_LOGOUT_MODULES', user);
+            self.logout_user(user);
+            self.sendNotification('USERS_LOGOUT', [user]);
+          }, this.config.logoutDelay);
+        } else {
+          this.config.debug && Log.log('Detected a logout event for ' + user + ' but they were not logged in.');
+        }
+      }
+    }
+  },
+
+  socketNotificationReceived: function (notification, payload) {
+    if (!payload || typeof payload !== 'object') return;
+    if (notification === 'worker_state') {
+      this.workerAvailable = payload.available === true;
+      if (!this.workerAvailable) this.reset_sessions();
+      else this.updateDom(0);
+      return;
+    }
     if (notification === 'camera_image') {
+      if (typeof payload.image !== 'string') return;
       this.image = payload.image;
       this.updateDom(this.config.animationSpeed);
+      return;
     }
-
-    // somebody has logged in
-    if (payload.action === 'login') {
-      var loginCount = 0;
-      for (user of payload.users) {
-        if (user != null) {
-          // if there are currently no users logged in OR we allow multiple users
-          this.config.debug && Log.log('Number of logged in users:' + this.users.length + ', Allowed Number of Users:' + this.config.multiUser);
-          if (this.users.length === 0 || this.users.length < this.config.multiUser) {
-            // check if the user is already logged in
-            if (!this.users.includes(user)) {
-              // run the login procedure
-              this.login_user(user);
-              // increment the counter
-              loginCount++;
-            } else {
-              this.config.debug && Log.log('Detected ' + user + ' again.');
-            }
-          } else {
-            this.config.debug &&
-              Log.log(
-                'Detected a login event for ' + user + ' but multiple concurrent logins is limited to ' + this.config.multiUser + ' and ' + this.users + ' is already logged in.',
-              );
-          }
-
-          // clear any timeouts the user might have so that they stay logged in
-          if (this.timouts[user] != null) {
-            this.config.debug && Log.log('Clearing timeouts for ' + user);
-            this.config.debug && Log.log('Remaining timeouts BEFORE:');
-            this.config.debug && Log.log(this.timouts);
-            clearTimeout(this.timouts[user]);
-            this.config.debug && Log.log('Remaining timeouts AFTER:');
-            this.config.debug && Log.log(this.timouts);
-          }
-        }
-      }
-
-      if (loginCount > 0) {
-        // We still need to broadcast MM notification for backward compatability.
-        this.config.debug && Log.log('Detected ' + loginCount + ' logins.');
-        this.sendNotification('USERS_LOGIN', payload.users);
-      }
-    } else if (payload.action === 'logout') {
-      var logoutCount = 0;
-      for (user of payload.users) {
-        if (user != null) {
-          // see if user is even logged in, since you can only log out if you are actually logged in
-          if (this.users.includes(user)) {
-            this.config.debug && Log.log('Setting logout timer for ' + user + ' for ' + this.config.logoutDelay + 'ms');
-            this.timouts[user] = setTimeout(function () {
-              // Broadcast notificaiton that we are about to hide modules.
-              // Ideally this would be USERS_LOGOUT to be consistent with hide/show timer, but to prevent regression using a new type.
-              self.sendNotification('USERS_LOGOUT_MODULES', user);
-              self.logout_user(user);
-              logoutCount++;
-            }, this.config.logoutDelay);
-          } else {
-            this.config.debug && Log.log('Detected a logout event for ' + user + ' but they were not logged in.');
-          }
-        }
-      }
-
-      if (logoutCount > 0) {
-        this.config.debug && Log.log('Detected ' + logoutCount + ' logouts.');
-        this.sendNotification('USERS_LOGOUT', payload.users);
-      }
-    }
+    if (notification !== 'user' || !Array.isArray(payload.users)) return;
+    const users = payload.users.filter(user => typeof user === 'string' && user.length > 0);
+    if (payload.action === 'login') this.login_users(users);
+    else if (payload.action === 'logout') this.logout_users(users);
   },
 
   // ----------------------------------------------------------------------------------------------------
@@ -484,7 +518,7 @@ Module.register('MMM-Face-Reco-DNN', {
 
     // load logged in users
     if (notification === 'GET_LOGGED_IN_USERS') {
-      Log.log(this.name + ' get logged in users ' + this.users);
+      Log.log(this.name + ' reporting active face-session count: ' + this.users.length);
       this.sendNotification('LOGGED_IN_USERS', this.users);
     }
 
@@ -499,10 +533,16 @@ Module.register('MMM-Face-Reco-DNN', {
     const wrapperEl = document.createElement('div');
     wrapperEl.classList.add('face-recognition');
 
-    const imageEl = document.createElement('img');
-    imageEl.classList.add('face-recognition-image');
-    imageEl.src = 'data:image/jpg;base64,' + this.image;
-    wrapperEl.appendChild(imageEl);
+    if (this.workerAvailable === false) {
+      const statusEl = document.createElement('span');
+      statusEl.textContent = 'Face recognition unavailable';
+      wrapperEl.appendChild(statusEl);
+    } else if (this.image) {
+      const imageEl = document.createElement('img');
+      imageEl.classList.add('face-recognition-image');
+      imageEl.src = 'data:image/jpg;base64,' + this.image;
+      wrapperEl.appendChild(imageEl);
+    }
 
     return wrapperEl;
   },

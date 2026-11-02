@@ -127,14 +127,21 @@ def extend_dataset(
 
 
 def monitor_commands(
-    stream: Any, active: threading.Event, closed: threading.Event
+    stream: Any,
+    active: threading.Event,
+    closed: threading.Event,
+    reset_ready: Callable[[], None] | None = None,
 ) -> None:
     """Accept complete commands and stop cleanly when the parent closes stdin."""
     for line in stream:
         command = line.strip().lower()
         if command == "start":
+            if reset_ready is not None:
+                reset_ready()
             active.set()
         elif command == "stop":
+            if reset_ready is not None:
+                reset_ready()
             active.clear()
         elif command == "exit":
             closed.set()
@@ -186,22 +193,37 @@ def run(settings: dict[str, Any]) -> int:
         enable_lores=settings["cameraLores"],
         frame_rate=settings["cameraFrameRate"],
         lores_format=settings["cameraLoresFormat"],
+        autofocus=settings.get("cameraAutofocus", "default"),
+        lens_position=settings.get("cameraLensPosition"),
+        exposure_mode=settings.get("cameraExposureMode", "normal"),
         brightness=settings["brightness"],
         contrast=settings["contrast"],
         rotation=settings["rotateCamera"],
     )
     previous: list[str] = []
     running = False
+    activation_generation = 0
+    previous_generation = 0
+    reported_ready_generation = None
+
+    def reset_ready() -> None:
+        """Require a new processed-frame readiness event after a command change."""
+        nonlocal activation_generation
+        activation_generation += 1
+
     try:
         if settings["run_only_on_notification"]:
             threading.Thread(
-                target=monitor_commands, args=(sys.stdin, active, closed), daemon=True
+                target=monitor_commands,
+                args=(sys.stdin, active, closed, reset_ready),
+                daemon=True,
             ).start()
         Print.printJson("status", "starting video stream...")
         Print.printJson("status", "Starting face recognition loop.")
         while not closed.is_set():
             started = time.monotonic()
             if not active.is_set():
+                reported_ready_generation = None
                 if running:
                     camera.stop()
                     running = False
@@ -213,12 +235,37 @@ def run(settings: dict[str, Any]) -> int:
             if not running:
                 camera.start()
                 running = True
+            frame_generation = activation_generation
+            if previous_generation != frame_generation:
+                # The browser cleared its sessions on pause, even when stop/start
+                # arrived too quickly for this loop to observe the inactive state.
+                previous = []
+                previous_generation = frame_generation
             with camera.capture() as captured:
                 result = engine.recognize(captured.processing_frame)
+                identities_settled = True
+                if settings.get("cameraAutofocus") == "face":
+                    camera.focus_on_faces(
+                        captured, [detection.box for detection in result.detections]
+                    )
+                    identities_settled = camera.face_focus_status.get("settled", False)
+                identities_settled = (
+                    identities_settled
+                    and active.is_set()
+                    and frame_generation == activation_generation
+                )
                 names = result.names
-                logins = [name for name in names if name not in previous]
-                logouts = [name for name in previous if name not in names]
-                if settings["extendDataset"]:
+                logins = (
+                    [name for name in names if name not in previous]
+                    if identities_settled
+                    else []
+                )
+                logouts = (
+                    [name for name in previous if name not in names]
+                    if identities_settled
+                    else []
+                )
+                if identities_settled and settings["extendDataset"]:
                     extend_dataset(
                         settings["dataset"], result, logins, captured.full_frame
                     )
@@ -242,7 +289,15 @@ def run(settings: dict[str, Any]) -> int:
                     Print.printJson("login", {"names": logins})
                 if logouts:
                     Print.printJson("logout", {"names": logouts})
-                previous = names
+                if identities_settled:
+                    previous = names
+            if (
+                active.is_set()
+                and frame_generation == activation_generation
+                and reported_ready_generation != frame_generation
+            ):
+                Print.printJson("ready", True)
+                reported_ready_generation = frame_generation
             if settings["output"] and cv2.waitKey(1) & 0xFF == ord("q"):
                 break
             closed.wait(

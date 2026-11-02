@@ -49,6 +49,9 @@ class FakeCamera:
         self.requests: list[FakeRequest] = []
         self.start_error: Exception | None = None
         self.capture_error: Exception | None = None
+        self.focus_error: Exception | None = None
+        self.focus_calls: list[tuple[FakeRequest, list[tuple[int, int, int, int]]]] = []
+        self.face_focus_status = {"state": "waiting", "settled": True}
 
     def start(self) -> None:
         """Record a start, optionally simulating a disconnected camera."""
@@ -71,6 +74,17 @@ class FakeCamera:
         request = FakeRequest(self)
         self.requests.append(request)
         return request
+
+    def focus_on_faces(
+        self, captured: FakeRequest, boxes: list[tuple[int, int, int, int]]
+    ) -> bool:
+        """Record same-request face targeting without a lens or camera."""
+        assert captured is self.requests[-1]
+        assert self.releases == len(self.requests) - 1
+        self.focus_calls.append((captured, boxes))
+        if self.focus_error:
+            raise self.focus_error
+        return bool(boxes)
 
 
 class FakeEvent:
@@ -229,7 +243,96 @@ def test_pause_resume_logs_out_then_restarts_camera(worker: SimpleNamespace) -> 
         ("logout", {"names": ["subject"]}),
         ("login", {"names": ["subject"]}),
     ]
+    assert [kind for kind, _ in worker.events].count("ready") == 2
     worker.thread_factory.return_value.start.assert_called_once()
+
+
+@pytest.mark.parametrize("pause_between_frames", [True, False])
+@pytest.mark.parametrize("known_face", [True, False])
+def test_resume_reconciles_sessions_without_a_preview(
+    worker: SimpleNamespace, pause_between_frames: bool, known_face: bool
+) -> None:
+    """Fast pause/start restores the same known face after frontend reset."""
+    worker.settings["run_only_on_notification"] = 1
+    captures = 0
+    present = worker.engine.recognize.return_value
+
+    def recognize(_: np.ndarray) -> recognition.FrameResult:
+        nonlocal captures
+        captures += 1
+        if captures == 2:
+            worker.closed.set()
+        return present if known_face else recognition.FrameResult([], [])
+
+    def command_step() -> None:
+        reset_ready = worker.thread_factory.call_args.kwargs["args"][3]
+        if len(worker.closed.waits) == 1:
+            reset_ready()
+            worker.active.clear()
+            if not pause_between_frames:
+                reset_ready()
+                worker.active.set()
+        elif len(worker.closed.waits) == 2:
+            reset_ready()
+            worker.active.set()
+
+    worker.engine.recognize.side_effect = recognize
+    worker.closed.on_wait = command_step
+    assert recognition.run(worker.settings) == 0
+    assert captures == 2
+    assert [kind for kind, _ in worker.events].count("ready") == 2
+    logins = [value for kind, value in worker.events if kind == "login"]
+    assert logins == ([{"names": ["subject"]}] * 2 if known_face else [])
+    assert not any(kind == "camera_image" for kind, _ in worker.events)
+
+
+def test_commands_invalidate_readiness_on_each_activation_change() -> None:
+    """The actual command monitor marks quick stop/start cycles as new work."""
+    active, closed = FakeEvent(), FakeEvent()
+    reset_ready = Mock()
+    recognition.monitor_commands(
+        io.StringIO("stop\nstart\nexit\n"), active, closed, reset_ready
+    )
+    assert reset_ready.call_count == 2
+    assert active.is_set() and closed.is_set()
+
+
+def test_command_change_during_recognition_rejects_stale_identity_and_enrollment(
+    worker: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An in-flight pre-pause result cannot reopen a session or train a face."""
+    worker.settings.update(run_only_on_notification=1, extendDataset=True)
+    known = worker.engine.recognize.return_value
+    unknown = recognition.FrameResult(
+        known.detections, [RecognitionMatch("unknown", 0.9, False)]
+    )
+    captures = 0
+
+    def recognize(_: np.ndarray) -> recognition.FrameResult:
+        nonlocal captures
+        captures += 1
+        if captures == 2:
+            reset_ready = worker.thread_factory.call_args.kwargs["args"][3]
+            reset_ready()
+            worker.active.clear()
+            reset_ready()
+            worker.active.set()
+            return unknown
+        if captures == 3:
+            worker.closed.set()
+        return known
+
+    extension = Mock(return_value=False)
+    monkeypatch.setattr(recognition, "extend_dataset", extension)
+    worker.engine.recognize.side_effect = recognize
+    assert recognition.run(worker.settings) == 0
+    assert [event for event in worker.events if event[0] in {"login", "logout"}] == [
+        ("login", {"names": ["subject"]})
+    ] * 2
+    assert extension.call_count == 2
+    assert all(call.args[1] is known for call in extension.call_args_list)
+    assert [event[0] for event in worker.events].count("ready") == 2
+    assert worker.camera.releases == 3
 
 
 def test_parent_eof_closes_constructed_camera_without_starting(
@@ -264,7 +367,9 @@ def test_notification_thread_start_failure_closes_constructed_camera(
     assert worker.camera.starts == 0 and not worker.camera.requests
 
 
-@pytest.mark.parametrize("stage", ["start", "capture", "recognize", "enrollment"])
+@pytest.mark.parametrize(
+    "stage", ["start", "capture", "recognize", "focus", "enrollment"]
+)
 def test_failures_always_close_the_camera(
     worker: SimpleNamespace,
     monkeypatch: pytest.MonkeyPatch,
@@ -278,13 +383,19 @@ def test_failures_always_close_the_camera(
         worker.camera.capture_error = error
     elif stage == "recognize":
         worker.engine.recognize.side_effect = error
+    elif stage == "focus":
+        worker.settings["cameraAutofocus"] = "face"
+        worker.camera.focus_error = error
     else:
         worker.settings["extendDataset"] = True
         monkeypatch.setattr(recognition, "extend_dataset", Mock(side_effect=error))
     with pytest.raises(RuntimeError, match="injected"):
         recognition.run(worker.settings)
     assert worker.camera.closes == 1
-    assert worker.camera.releases == (1 if stage in {"recognize", "enrollment"} else 0)
+    assert worker.camera.releases == (
+        1 if stage in {"recognize", "focus", "enrollment"} else 0
+    )
+    assert not any(kind == "ready" for kind, _ in worker.events)
 
 
 def test_preview_encoding_failure_releases_camera_buffer(
@@ -454,3 +565,194 @@ def test_opencv_thread_budget_parser_keeps_default_and_accepts_bounds() -> None:
     for threads in (0, 2, 64):
         Arguments.prepareRecognitionArguments(["--opencvThreads", str(threads)])
         assert Arguments.get("opencvThreads") == threads
+
+
+def test_ready_is_emitted_once_after_first_request_release(
+    worker: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Availability means processing succeeded and the camera buffer returned."""
+    result = worker.engine.recognize.return_value
+    captures = 0
+    releases_when_ready = []
+
+    def recognize(_: np.ndarray) -> recognition.FrameResult:
+        nonlocal captures
+        captures += 1
+        if captures == 2:
+            worker.signals[15](15, None)
+        return result
+
+    def message(kind: str, value: Any) -> None:
+        if kind == "ready":
+            assert value is True
+            releases_when_ready.append(worker.camera.releases)
+
+    worker.engine.recognize.side_effect = recognize
+    monkeypatch.setattr(recognition, "Print", SimpleNamespace(printJson=message))
+    assert recognition.run(worker.settings) == 0
+    assert releases_when_ready == [1]
+    assert worker.camera.releases == 2
+
+
+@pytest.mark.parametrize(
+    "focus,exposure,lens_position",
+    [
+        ("continuous", "normal", None),
+        ("manual", "short", 1.0),
+        ("default", "normal", None),
+        ("face", "normal", 1.0),
+    ],
+)
+def test_camera_control_settings_reach_the_stream(
+    worker: SimpleNamespace,
+    focus: str,
+    exposure: str,
+    lens_position: float | None,
+) -> None:
+    """The user-facing options are connected to the advertised-control layer."""
+    worker.settings["cameraAutofocus"] = focus
+    worker.settings["cameraExposureMode"] = exposure
+    worker.settings["cameraLensPosition"] = lens_position
+    result = worker.engine.recognize.return_value
+
+    def recognize(_: np.ndarray) -> recognition.FrameResult:
+        worker.closed.set()
+        return result
+
+    worker.engine.recognize.side_effect = recognize
+    assert recognition.run(worker.settings) == 0
+    assert worker.factory.call_args.kwargs["autofocus"] == focus
+    assert worker.factory.call_args.kwargs["exposure_mode"] == exposure
+    assert worker.factory.call_args.kwargs["lens_position"] == lens_position
+    if focus != "face":
+        assert worker.camera.focus_calls == []
+
+
+@pytest.mark.parametrize("face_present", [True, False])
+def test_face_focus_targets_current_detection_without_requiring_identity(
+    worker: SimpleNamespace, face_present: bool
+) -> None:
+    """Unknown faces and empty scenes reach the ROI controller before release."""
+    worker.settings["cameraAutofocus"] = "face"
+    detections = [Detection((1, 10, 10, 1))] if face_present else []
+    matches = [RecognitionMatch("unknown", 0.9, False)] if face_present else []
+
+    def recognize(_: np.ndarray) -> recognition.FrameResult:
+        worker.closed.set()
+        return recognition.FrameResult(detections, matches)
+
+    worker.engine.recognize.side_effect = recognize
+    assert recognition.run(worker.settings) == 0
+    assert worker.camera.focus_calls == [
+        (worker.camera.requests[0], [detection.box for detection in detections])
+    ]
+    assert worker.camera.releases == 1 and worker.camera.closes == 1
+
+
+@pytest.mark.parametrize("focus_state", ["pending", "scanning", "restoring"])
+def test_face_focus_transition_keeps_preview_but_defers_identity_and_enrollment(
+    worker: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, focus_state: str
+) -> None:
+    """A transient blurred result cannot replace a known session or training set."""
+    worker.settings.update(cameraAutofocus="face", extendDataset=True, outputmm=1)
+    known = worker.engine.recognize.return_value
+    unknown = recognition.FrameResult(
+        known.detections, [RecognitionMatch("unknown", 0.9, False)]
+    )
+    steps = iter(((known, True), (unknown, False), (known, True)))
+    captures = 0
+
+    def recognize(_: np.ndarray) -> recognition.FrameResult:
+        nonlocal captures
+        captures += 1
+        result, settled = next(steps)
+        worker.camera.face_focus_status = {
+            "state": "locked" if settled else focus_state,
+            "settled": settled,
+        }
+        if captures == 3:
+            worker.closed.set()
+        return result
+
+    extension = Mock(return_value=False)
+    monkeypatch.setattr(recognition, "extend_dataset", extension)
+    worker.engine.recognize.side_effect = recognize
+    assert recognition.run(worker.settings) == 0
+    assert [event for event in worker.events if event[0] in {"login", "logout"}] == [
+        ("login", {"names": ["subject"]})
+    ]
+    assert [event[0] for event in worker.events].count("camera_image") == 3
+    assert extension.call_count == 2
+    assert all(call.args[1] is known for call in extension.call_args_list)
+    assert extension.call_args_list[0].args[2] == ["subject"]
+    assert extension.call_args_list[1].args[2] == []
+    assert worker.camera.releases == 3 and worker.camera.closes == 1
+
+
+def test_no_face_cancels_scan_without_preserving_a_ghost_session(
+    worker: SimpleNamespace,
+) -> None:
+    """The camera controller's safe no-face state permits normal identity logout."""
+    worker.settings["cameraAutofocus"] = "face"
+    known = worker.engine.recognize.return_value
+    unknown = recognition.FrameResult(
+        known.detections, [RecognitionMatch("unknown", 0.9, False)]
+    )
+    steps = iter(
+        ((known, True), (unknown, False), (recognition.FrameResult([], []), True))
+    )
+
+    def recognize(_: np.ndarray) -> recognition.FrameResult:
+        result, settled = next(steps)
+        worker.camera.face_focus_status = {"settled": settled}
+        if not result.detections:
+            worker.closed.set()
+        return result
+
+    worker.engine.recognize.side_effect = recognize
+    assert recognition.run(worker.settings) == 0
+    assert [event for event in worker.events if event[0] in {"login", "logout"}] == [
+        ("login", {"names": ["subject"]}),
+        ("logout", {"names": ["subject"]}),
+    ]
+    assert worker.camera.focus_calls[-1][1] == []
+
+
+@pytest.mark.parametrize(
+    "flag,value", [("--cameraAutofocus", "fast"), ("--cameraExposureMode", "invalid")]
+)
+def test_invalid_camera_control_modes_fail_before_hardware(
+    flag: str, value: str
+) -> None:
+    """Reject unsupported user modes rather than silently substituting one."""
+    with pytest.raises(SystemExit):
+        Arguments.prepareRecognitionArguments([flag, value])
+
+
+def test_camera_control_default_modes_are_explicit() -> None:
+    """Camera defaults preserve the existing focus and normal exposure profile."""
+    Arguments.prepareRecognitionArguments([])
+    assert Arguments.get("cameraAutofocus") == "default"
+    assert Arguments.get("cameraLensPosition") is None
+    assert Arguments.get("cameraExposureMode") == "normal"
+
+
+@pytest.mark.parametrize("position", ["-1", "nan", "inf", "-inf", "wrong"])
+def test_invalid_manual_lens_position_is_rejected(position: str) -> None:
+    """A lens request cannot bypass finite nonnegative input validation."""
+    with pytest.raises(SystemExit):
+        Arguments.prepareRecognitionArguments(
+            ["--cameraAutofocus", "manual", "--cameraLensPosition", position]
+        )
+
+
+def test_lens_position_requires_supported_mode_and_preserves_dioptres() -> None:
+    """Ignore no focus requests silently; manual focus accepts the stated units."""
+    with pytest.raises(SystemExit):
+        Arguments.prepareRecognitionArguments(["--cameraLensPosition", "1.0"])
+    for mode in ("manual", "face"):
+        Arguments.prepareRecognitionArguments(
+            ["--cameraAutofocus", mode, "--cameraLensPosition", "1.0"]
+        )
+        assert Arguments.get("cameraLensPosition") == 1.0
