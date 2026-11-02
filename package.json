@@ -1,11 +1,11 @@
 {
   "name": "mmm-face-reco-dnn",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "description": "Face Recognition with Open CV and Deep Neural Network",
   "main": "MMM-Face-Reco-DNN.js",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nischi/MMM-Face-Reco-DNN.git"
+    "url": "git+https://github.com/goldyfruit/MMM-Face-Reco-DNN.git"
   },
   "keywords": [
     "magic",
@@ -17,16 +17,17 @@
     "network"
   ],
   "author": "Thierry Nischelwitzer",
-  "license": "MIT",
+  "license": "MIT AND Apache-2.0",
   "bugs": {
-    "url": "https://github.com/nischi/MMM-Face-Reco-DNN/issues"
+    "url": "https://github.com/goldyfruit/MMM-Face-Reco-DNN/issues"
   },
-  "homepage": "https://github.com/nischi/MMM-Face-Reco-DNN#readme",
+  "homepage": "https://github.com/goldyfruit/MMM-Face-Reco-DNN#readme",
   "scripts": {
     "lint": "eslint .",
     "prettier": "prettier --write **/*.js",
     "encode": "python tools/encode.py -i dataset -e model/encodings.pickle",
-    "recognition": "python tools/recognition.py -e model/encodings.pickle -c model/haarcascade_frontalface_default.xml"
+    "recognition": "python tools/recognition.py -e model/encodings.pickle -c model/haarcascade_frontalface_default.xml",
+    "test": "node tests/test_node_helper.cjs"
   },
   "dependencies": {
     "python-shell": "5.0.0",

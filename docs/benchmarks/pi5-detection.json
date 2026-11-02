@@ -1,0 +1,138 @@
+{
+  "opencv": "4.10.0",
+  "repeats": 7,
+  "scope": "Detection only; one public portrait and synthetic transforms, not identity accuracy",
+  "yunet_score_threshold": 0.8,
+  "detectors": {
+    "dnn": [
+      {
+        "scene": "portrait",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 152.262,
+        "min_detection_ms": 150.783
+      },
+      {
+        "scene": "dim_portrait",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 152.656,
+        "min_detection_ms": 151.834
+      },
+      {
+        "scene": "tilted_-25",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 151.456,
+        "min_detection_ms": 150.751
+      },
+      {
+        "scene": "tilted_25",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 152.189,
+        "min_detection_ms": 151.35
+      },
+      {
+        "scene": "face_crop_48",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 84.738,
+        "min_detection_ms": 84.242
+      },
+      {
+        "scene": "face_crop_64",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 86.044,
+        "min_detection_ms": 85.051
+      },
+      {
+        "scene": "face_crop_96",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 85.102,
+        "min_detection_ms": 84.629
+      },
+      {
+        "scene": "two_faces",
+        "expected_faces": 2,
+        "detected_faces": 2,
+        "median_detection_ms": 84.899,
+        "min_detection_ms": 84.387
+      },
+      {
+        "scene": "blank",
+        "expected_faces": 0,
+        "detected_faces": 0,
+        "median_detection_ms": 85.466,
+        "min_detection_ms": 84.643
+      }
+    ],
+    "yunet": [
+      {
+        "scene": "portrait",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 56.171,
+        "min_detection_ms": 52.95
+      },
+      {
+        "scene": "dim_portrait",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 60.921,
+        "min_detection_ms": 56.794
+      },
+      {
+        "scene": "tilted_-25",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 58.761,
+        "min_detection_ms": 55.151
+      },
+      {
+        "scene": "tilted_25",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 58.292,
+        "min_detection_ms": 53.421
+      },
+      {
+        "scene": "face_crop_48",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 26.133,
+        "min_detection_ms": 23.178
+      },
+      {
+        "scene": "face_crop_64",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 24.813,
+        "min_detection_ms": 23.029
+      },
+      {
+        "scene": "face_crop_96",
+        "expected_faces": 1,
+        "detected_faces": 1,
+        "median_detection_ms": 25.837,
+        "min_detection_ms": 22.984
+      },
+      {
+        "scene": "two_faces",
+        "expected_faces": 2,
+        "detected_faces": 2,
+        "median_detection_ms": 25.35,
+        "min_detection_ms": 21.944
+      },
+      {
+        "scene": "blank",
+        "expected_faces": 0,
+        "detected_faces": 0,
+        "median_detection_ms": 27.967,
+        "min_detection_ms": 23.311
+      }
+    ]
+  }
+}

@@ -1,3 +1,5 @@
+Last Edit: Codex - 2026-11-02 - Motive: Document the tested Pi camera and face-detection fork.
+
 # Contribution Policy for MMM-Face-Reco-DNN
 
 Thanks for contributing to MMM-Face-Reco-DNN.

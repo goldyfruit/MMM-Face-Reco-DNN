@@ -1,253 +1,262 @@
+"""Detect and recognize faces with a fresh-frame, testable camera pipeline."""
+
 import base64
-import cv2
-import face_recognition
-import numpy
-import os
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 import pickle
 import signal
 import sys
 import threading
 import time
-from datetime import datetime
-from utils.image import Image
-from utils.arguments import Arguments
-from utils.print import Print
-from picamera2 import Picamera2
+from types import FrameType
+from typing import Any, Callable
 
-def signalHandler(signal, frame):
-    global closeSafe
-    closeSafe = True
+# Support both `python tools/recognition.py` and package imports.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-signal.signal(signal.SIGINT, signalHandler)
-signal.signal(signal.SIGTERM, signalHandler)
-closeSafe = False
+import cv2
+import numpy as np
 
-external_trigger = True # Default to true to start recognition on startup
-
-def monitor_stdin_for_command():
-    """
-    Function for monitoring std input for commands to start or stop face recognition.
-
-    Note: Avoid putting print statements in this function, as will run asynchronously in 
-    a thread. Print statements could get weaved in with other print statements, which may
-    break the parent Magic Mirror processes processing of this tool's std output. 
-    """
-    global external_trigger
-    while True:
-        line = sys.stdin.readline()
-        if 'start' in line:
-            external_trigger = True
-        elif 'stop' in line:
-            external_trigger = False
-        elif 'exit' in line or line == '':
-            # If exit or EOF sent, break loop
-            external_trigger = False
-            break
-
-# prepare console arguments
-Arguments.prepareRecognitionArguments()
-
-# load the known faces and embeddings along with OpenCV's Haar
-# cascade for face detection
-Print.printJson("status", "loading encodings + face detector...")
-data = pickle.loads(open(Arguments.get("encodings"), "rb").read())
-detector = cv2.CascadeClassifier(Arguments.get("cascade"))
-
-# initialize the video stream
-Print.printJson("status", "starting video stream...")
-processWidth = Arguments.get("processWidth")
-resolution = Arguments.get("resolution").split(",")
-resolution = (int(resolution[0]), int(resolution[1]))
-Print.printJson("status", resolution)
-Print.printJson("status", processWidth)
-
-picam2 = Picamera2()
-picam2.configure(picam2.create_preview_configuration(main={"size": (resolution[0], resolution[1]), "format": "XRGB8888"}))
-picam2.start()
+from tools.utils.arguments import Arguments
+from tools.utils.camera import CameraStream
+from tools.utils.print import Print
+from tools.utils.vision import (
+    Detection,
+    FaceDetector,
+    FaceMatcher,
+    RecognitionMatch,
+    to_rgb,
+)
 
 
-# variable for prev names
-prevNames = []
+@dataclass(frozen=True)
+class FrameResult:
+    """Keep each face's coordinates and identity score associated."""
 
-# create unknown path if needed
-if Arguments.get("extendDataset") is True:
-    unknownPath = os.path.dirname(Arguments.get("dataset") + "unknown/")
-    try:
-        os.stat(unknownPath)
-    except:
-        os.mkdir(unknownPath)
+    detections: list[Detection]
+    matches: list[RecognitionMatch]
 
-tolerance = float(Arguments.get("tolerance"))
-
-# Default to running face recognition
-run_face_recognition = True
-
-# If triggering face recognition on external notification, start
-# listener thread for that external trigger
-if Arguments.get("run_only_on_notification"):
-    stdin_monitoring_thread = threading.Thread(target=monitor_stdin_for_command, daemon=True)
-    stdin_monitoring_thread.start()
-    Print.printJson("status", "Started stdin monitoring thread for triggering face recognition.")
+    @property
+    def names(self) -> list[str]:
+        """Return distinct labels in detection order for login/logout events."""
+        return list(dict.fromkeys(match.name for match in self.matches))
 
 
-# loop over frames from the video file stream
-Print.printJson("status", "Starting face recognition loop.")
-while True:
-    loop_start_time = time.time()
-    
-    if Arguments.get("run_only_on_notification"):
-        if run_face_recognition == False and external_trigger == True:
-            # Externally triggered to run face recognition
-            Print.printJson("status", "Starting face recognition.")
-            run_face_recognition = True
-            picam2.start()
+class RecognitionEngine:
+    """Separate detection, unchanged dlib descriptors and gallery matching."""
 
-        elif run_face_recognition == True and external_trigger == False:
-            # Externally triggered to stop face recognition.
-            Print.printJson("status", "Stopping face recognition and logging out any logged in users.")
-            run_face_recognition = False
-            picam2.stop()
-            
-            # Log out any users that were logged in, and clear prevNames list
-            if prevNames:
-                Print.printJson("logout", {"names": prevNames})
-                prevNames.clear()
+    def __init__(
+        self, detector: FaceDetector, matcher: FaceMatcher, face_module: Any = None
+    ) -> None:
+        """Allow dependency injection without a camera or private gallery."""
+        if face_module is None:
+            import face_recognition
 
-    if run_face_recognition:
-        # read the frame
-        originalFrame = picam2.capture_array()
+            face_module = face_recognition
+        self.detector = detector
+        self.matcher = matcher
+        self.face_module = face_module
 
-        # adjust image brightness and contrast
-        originalFrame = Image.adjust_brightness_contrast(
-            originalFrame, Arguments.get("brightness"), Arguments.get("contrast")
+    def recognize(self, bgr_frame: np.ndarray) -> FrameResult:
+        """Compute descriptors only for detected faces and keep box alignment."""
+        detections = self.detector.detect(bgr_frame)
+        if not detections:
+            return FrameResult([], [])
+        encodings = self.face_module.face_encodings(
+            to_rgb(bgr_frame),
+            known_face_locations=[face.box for face in detections],
+            num_jitters=1,
+            model="small",
         )
+        if len(encodings) != len(detections):
+            raise RuntimeError("Descriptor count does not match detected faces")
+        return FrameResult(detections, self.matcher.match_many(encodings))
 
-        if Arguments.get("rotateCamera") >= 0 and Arguments.get("rotateCamera") <= 2:
-            originalFrame = cv2.rotate(originalFrame, Arguments.get("rotateCamera"))
 
-        # resize image if we wanna process a smaller image
-        if processWidth != resolution[0] and processWidth != 0:
-            frame = Image.resize(originalFrame, width=processWidth)
-        else:
-            frame = originalFrame
+def annotate(
+    frame: np.ndarray, result: FrameResult, cv_module: Any = cv2
+) -> np.ndarray:
+    """Draw labels on a copy, never on a future enrollment image."""
+    preview = frame.copy()
+    for detection, match in zip(result.detections, result.matches):
+        top, right, bottom, left = detection.box
+        cv_module.rectangle(preview, (left, top), (right, bottom), (0, 255, 0), 2)
+        distance = "n/a" if match.distance is None else f"{match.distance:.2f}"
+        cv_module.putText(
+            preview,
+            f"{match.name} ({distance})",
+            (left, max(12, top - 15)),
+            cv_module.FONT_HERSHEY_SIMPLEX,
+            0.75,
+            (0, 255, 0),
+            2,
+        )
+    return preview
 
-        if Arguments.get("method") == "dnn":
-            # load the input image and convert it from BGR (OpenCV ordering)
-            # to dlib ordering (RGB)
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            # detect the (x, y)-coordinates of the bounding boxes
-            # corresponding to each face in the input image
-            boxes = face_recognition.face_locations(
-                rgb, model=Arguments.get("detectionMethod")
-            )
-        elif Arguments.get("method") == "haar":
-            # convert the input frame from (1) BGR to grayscale (for face
-            # detection) and (2) from BGR to RGB (for face recognition)
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            # detect faces in the grayscale frame
-            rects = detector.detectMultiScale(
-                gray,
-                scaleFactor=1.1,
-                minNeighbors=5,
-                minSize=(30, 30),
-                flags=cv2.CASCADE_SCALE_IMAGE,
-            )
+def extend_dataset(
+    dataset: str,
+    result: FrameResult,
+    logins: list[str],
+    full_frame: Callable[[], np.ndarray],
+    cv_module: Any = cv2,
+) -> bool:
+    """Save one unannotated full-resolution frame only for an unambiguous subject.
 
-            # OpenCV returns bounding box coordinates in (x, y, w, h) order
-            # but we need them in (top, right, bottom, left) order, so we
-            # need to do a bit of reordering
-            boxes = [(y, x + w, y + h, x) for (x, y, w, h) in rects]
+    Group images must not silently become training examples for one identity.
+    The existing encoder format and existing images remain untouched.
+    """
+    if len(result.detections) != 1 or len(result.matches) != 1 or not logins:
+        return False
+    name = result.matches[0].name
+    if name not in logins:
+        return False
+    base = Path(dataset).resolve()
+    destination = (base / name).resolve()
+    if not name or destination.parent != base:
+        raise ValueError("Dataset label must be a single safe directory name")
+    destination.mkdir(parents=True, exist_ok=True)
+    target = destination / (
+        name + "_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f") + ".jpg"
+    )
+    if not cv_module.imwrite(str(target), full_frame()):
+        raise RuntimeError("Could not save dataset image")
+    return True
 
-        # compute the facial embeddings for each face bounding box
-        encodings = face_recognition.face_encodings(rgb, boxes)
-        names = []
 
-        # loop over the facial embeddings
-        for encoding in encodings:
-            # compute distances between this encoding and the faces in dataset
-            distances = face_recognition.face_distance(data["encodings"], encoding)
+def monitor_commands(
+    stream: Any, active: threading.Event, closed: threading.Event
+) -> None:
+    """Accept complete commands and stop cleanly when the parent closes stdin."""
+    for line in stream:
+        command = line.strip().lower()
+        if command == "start":
+            active.set()
+        elif command == "stop":
+            active.clear()
+        elif command == "exit":
+            closed.set()
+            return
+    closed.set()
 
-            minDistance = 1.0
-            if len(distances) > 0:
-                # the smallest distance is the closest to the encoding
-                minDistance = min(distances)
 
-            # save the name if the distance is below the tolerance
-            if minDistance < tolerance:
-                idx = numpy.where(distances == minDistance)[0][0]
-                name = data["names"][idx]
-            else:
-                name = "unknown"
+def run(settings: dict[str, Any]) -> int:
+    """Run the worker while releasing every camera request and camera handle."""
+    closed, active = threading.Event(), threading.Event()
+    active.set()
 
-            # update the list of names
-            names.append(name)
+    def request_stop(signum: int, frame: FrameType | None) -> None:
+        """Request shutdown from SIGINT or SIGTERM without camera I/O in a handler."""
+        closed.set()
 
-        # loop over the recognized faces
-        for (top, right, bottom, left), name in zip(boxes, names):
-            # draw the predicted face name on the image
-            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-            y = top - 15 if top - 15 > 15 else top + 15
-            txt = name + " (" + "{:.2f}".format(minDistance) + ")"
-            cv2.putText(
-                frame, txt, (left, y), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2
-            )
-
-        # display the image to our screen
-        if Arguments.get("output") == 1:
-            cv2.imshow("Frame", frame)
-
-        if Arguments.get("outputmm") == 1:
-            retval, buffer = cv2.imencode('.jpg', frame)
-            jpg_as_text = base64.b64encode(buffer).decode()
-            Print.printJson("camera_image", {"image": jpg_as_text})
-
-        # update the FPS counter
-        # fps.update()
-
-        logins = []
-        logouts = []
-        # Check which names are new login and which are new logout with prevNames
-        for n in names:
-            if prevNames.__contains__(n) == False and n is not None:
-                logins.append(n)
-
-                # if extendDataset is active we need to save the picture
-                if Arguments.get("extendDataset") is True:
-                    # set correct path to the dataset
-                    path = os.path.dirname(Arguments.get("dataset") + "/" + n + "/")
-
-                    today = datetime.now()
-                    cv2.imwrite(
-                        path + "/" + n + "_" + today.strftime("%Y%m%d_%H%M%S") + ".jpg",
-                        originalFrame,
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+    Print.printJson("status", "loading encodings + face detector...")
+    # Legacy encoding files are trusted local training data, not remote input.
+    with Path(settings["encodings"]).open("rb") as source:
+        data = pickle.load(source)
+    matcher = FaceMatcher(
+        data["encodings"],
+        data["names"],
+        settings["tolerance"],
+        settings["identityMargin"],
+    )
+    detector = FaceDetector(
+        method=settings["method"],
+        detection_method=settings["detectionMethod"],
+        cascade_path=settings["cascade"],
+        yunet_model=settings["yunetModel"],
+        score_threshold=settings["yunetScoreThreshold"],
+        nms_threshold=settings["yunetNmsThreshold"],
+        top_k=settings["yunetTopK"],
+        upsample=settings["detectionUpsample"],
+    )
+    engine = RecognitionEngine(detector, matcher)
+    parts = settings["resolution"].split(",")
+    if len(parts) != 2:
+        raise ValueError("Resolution must contain width,height")
+    camera = CameraStream(
+        resolution=tuple(int(value) for value in parts),
+        process_width=settings["processWidth"],
+        enable_lores=settings["cameraLores"],
+        frame_rate=settings["cameraFrameRate"],
+        lores_format=settings["cameraLoresFormat"],
+        brightness=settings["brightness"],
+        contrast=settings["contrast"],
+        rotation=settings["rotateCamera"],
+    )
+    previous: list[str] = []
+    running = False
+    try:
+        if settings["run_only_on_notification"]:
+            threading.Thread(
+                target=monitor_commands, args=(sys.stdin, active, closed), daemon=True
+            ).start()
+        Print.printJson("status", "starting video stream...")
+        Print.printJson("status", "Starting face recognition loop.")
+        while not closed.is_set():
+            started = time.monotonic()
+            if not active.is_set():
+                if running:
+                    camera.stop()
+                    running = False
+                    if previous:
+                        Print.printJson("logout", {"names": previous})
+                        previous = []
+                closed.wait(0.05)
+                continue
+            if not running:
+                camera.start()
+                running = True
+            with camera.capture() as captured:
+                result = engine.recognize(captured.processing_frame)
+                names = result.names
+                logins = [name for name in names if name not in previous]
+                logouts = [name for name in previous if name not in names]
+                if settings["extendDataset"]:
+                    extend_dataset(
+                        settings["dataset"], result, logins, captured.full_frame
                     )
-        for n in prevNames:
-            if names.__contains__(n) == False and n is not None:
-                logouts.append(n)
+                if settings["output"] or settings["outputmm"]:
+                    preview = annotate(captured.processing_frame, result)
+                    if settings["output"]:
+                        cv2.imshow("Frame", preview)
+                    if settings["outputmm"]:
+                        ok, buffer = cv2.imencode(
+                            ".jpg",
+                            preview,
+                            [cv2.IMWRITE_JPEG_QUALITY, settings["previewQuality"]],
+                        )
+                        if not ok:
+                            raise RuntimeError("Could not encode camera preview")
+                        Print.printJson(
+                            "camera_image",
+                            {"image": base64.b64encode(buffer).decode("ascii")},
+                        )
+                if logins:
+                    Print.printJson("login", {"names": logins})
+                if logouts:
+                    Print.printJson("logout", {"names": logouts})
+                previous = names
+            if settings["output"] and cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+            closed.wait(
+                max(0.0, settings["interval"] / 1000 - (time.monotonic() - started))
+            )
+    finally:
+        camera.close()
+        if settings["output"]:
+            cv2.destroyAllWindows()
+    return 0
 
-        # send inforrmation to prompt, only if something has changes
-        if logins.__len__() > 0:
-            Print.printJson("login", {"names": logins})
 
-        if logouts.__len__() > 0:
-            Print.printJson("logout", {"names": logouts})
-
-        # set this names as new prev names for next iteration
-        prevNames = names
-
-    key = cv2.waitKey(1) & 0xFF
-    # if the `q` key was pressed, break from the loop
-    if key == ord("q") or closeSafe == True:
-        break
-    
-    # Calculate how long the loop ran thus far. If loop time was less than 
-    # the specified interval, sleep more to meet the target interval
-    loop_time = time.time() - loop_start_time
-    time.sleep(max(0.0, Arguments.get("interval") / 1000 - loop_time))
+def main(argv: list[str] | None = None) -> int:
+    """Parse options and start a worker only for an explicit CLI invocation."""
+    Arguments.prepareRecognitionArguments(argv)
+    return run(Arguments.args)
 
 
-# do a bit of cleanup
-picam2.stop()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    sys.exit(main())
