@@ -54,6 +54,7 @@ Module.register('MMM-Face-Reco-DNN', {
     identityMargin: 0,
     // Opt-in ISP detection stream and sensor frame-rate cap.
     cameraLores: false,
+    cameraLoresFormat: 'YUV420',
     cameraFrameRate: null,
     previewQuality: 95,
     // how fast in ms should the modules hide and show (face effect)

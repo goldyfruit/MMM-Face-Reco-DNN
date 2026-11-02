@@ -142,6 +142,7 @@ def run(settings: dict[str, Any]) -> int:
     camera = CameraStream(
         resolution=tuple(int(value) for value in parts), process_width=settings['processWidth'],
         enable_lores=settings['cameraLores'], frame_rate=settings['cameraFrameRate'],
+        lores_format=settings['cameraLoresFormat'],
         brightness=settings['brightness'], contrast=settings['contrast'], rotation=settings['rotateCamera'],
     )
     previous: list[str] = []

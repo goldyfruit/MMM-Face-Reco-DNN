@@ -77,9 +77,19 @@ def synthetic_camera() -> tuple[CameraDouble, RequestDouble]:
     small = np.full((24, 32, 3), (0, 0, 255), dtype=np.uint8)
     request = RequestDouble({
         "main": main,
-        "lores": cv2.cvtColor(small, cv2.COLOR_BGR2YUV_I420),
+        "lores": full_range_sycc420(small),
     })
     return CameraDouble(request), request
+
+
+def full_range_sycc420(bgr: np.ndarray) -> np.ndarray:
+    """Pack synthetic full-range YCbCr planes like Picamera2 preview buffers."""
+    height, width = bgr.shape[:2]
+    converted = cv2.cvtColor(bgr, cv2.COLOR_BGR2YCrCb)
+    y = converted[:, :, 0]
+    cb = cv2.resize(converted[:, :, 2], (width // 2, height // 2), interpolation=cv2.INTER_AREA)
+    cr = cv2.resize(converted[:, :, 1], (width // 2, height // 2), interpolation=cv2.INTER_AREA)
+    return np.concatenate((y.reshape(-1), cb.reshape(-1), cr.reshape(-1))).reshape(height * 3 // 2, width)
 
 
 def test_lores_size_preserves_common_aspect_ratio_and_alignment() -> None:
@@ -124,12 +134,69 @@ def test_padding_is_removed_after_yuv_conversion() -> None:
     padded = np.empty((24, 64, 3), dtype=np.uint8)
     padded[:, :32] = (0, 0, 255)
     padded[:, 32:] = (255, 0, 0)
-    request.arrays["lores"] = cv2.cvtColor(padded, cv2.COLOR_BGR2YUV_I420)
+    request.arrays["lores"] = full_range_sycc420(padded)
     stream = CameraStream((64, 48), 32, True, camera_factory=lambda: camera)
     stream.start()
     with stream.capture() as frame:
         assert frame.processing_frame.shape == (24, 32, 3)
         assert np.allclose(frame.processing_frame[:, -1], (0, 0, 255), atol=2)
+
+
+@pytest.mark.parametrize("color", [
+    (32, 32, 32), (224, 224, 224), (70, 120, 170), (130, 160, 200),
+])
+def test_sycc_full_range_preserves_grey_and_color(color: tuple[int, int, int]) -> None:
+    """Do not decode full-range preview values with limited-range I420 math."""
+    camera, request = synthetic_camera()
+    bgr = np.full((24, 32, 3), color, dtype=np.uint8)
+    request.arrays["lores"] = full_range_sycc420(bgr)
+    stream = CameraStream((64, 48), 32, True, camera_factory=lambda: camera)
+    stream.start()
+    with stream.capture() as frame:
+        assert np.allclose(frame.processing_frame, color, atol=2)
+        if color == (32, 32, 32):
+            # The previous converter incorrectly stretched this grey to 19.
+            old = cv2.cvtColor(request.arrays["lores"], cv2.COLOR_YUV2BGR_I420)
+            assert tuple(old[0, 0]) == (19, 19, 19)
+            assert tuple(frame.processing_frame[0, 0]) == color
+
+
+def test_rgb888_lores_keeps_bgr_byte_order_without_conversion(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pi5 RGB888 output is already BGR and needs neither I420 nor channel swap."""
+    camera, request = synthetic_camera()
+    lowres = np.full((24, 40, 3), (10, 20, 30), dtype=np.uint8)
+    lowres[:, 32:] = (200, 150, 100)  # Simulate row padding without leaking it.
+    request.arrays["lores"] = lowres
+    stream = CameraStream(
+        (64, 48), 32, True, camera_factory=lambda: camera, lores_format="RGB888",
+    )
+    stream.start()
+
+    def forbid(*args: object) -> None:
+        """RGB888 processing must not call a YUV conversion or swap B/R."""
+        pytest.fail("Unexpected colour conversion on RGB888")
+
+    monkeypatch.setattr(cv2, "cvtColor", forbid)
+    with stream.capture() as frame:
+        assert camera.options["lores"]["format"] == "RGB888"
+        assert frame.processing_frame.shape == (24, 32, 3)
+        assert np.all(frame.processing_frame == (10, 20, 30))
+        assert request.reads == ["lores"]
+    assert request.releases == 1
+
+
+def test_invalid_rgb888_frame_releases_request() -> None:
+    """Do not reinterpret a four-channel frame as the requested RGB888 stream."""
+    camera, request = synthetic_camera()
+    request.arrays["lores"] = np.zeros((24, 32, 4), dtype=np.uint8)
+    stream = CameraStream(
+        (64, 48), 32, True, camera_factory=lambda: camera, lores_format="RGB888",
+    )
+    stream.start()
+    with pytest.raises(ValueError, match="RGB888"):
+        with stream.capture():
+            pytest.fail("Invalid pixel format cannot reach recognition")
+    assert request.releases == 1
 
 
 def test_legacy_path_keeps_annotations_out_of_full_size_dataset() -> None:
@@ -221,6 +288,7 @@ def test_configuration_failure_closes_camera_and_propagates() -> None:
     {"process_width": -1}, {"process_width": True},
     {"frame_rate": 0}, {"frame_rate": -1}, {"frame_rate": float("nan")},
     {"frame_rate": float("inf")}, {"rotation": 3}, {"brightness": float("nan")},
+    {"lores_format": "BGR888"},
 ])
 def test_invalid_settings_do_not_open_camera(options: dict[str, Any]) -> None:
     """Reject invalid controls before touching hardware."""

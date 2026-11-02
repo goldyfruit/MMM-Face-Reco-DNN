@@ -37,7 +37,7 @@ function setup() {
   const helper = context.module.exports;
   helper.name = 'MMM-Face-Reco-DNN';
   helper.sendSocketNotification = () => {};
-  helper.config = { external_trigger_notification: '', cameraLores: true, cameraFrameRate: 15, method: 'yunet', pythonPath: '/venv/python' };
+  helper.config = { external_trigger_notification: '', cameraLores: true, cameraLoresFormat: 'RGB888', cameraFrameRate: 15, method: 'yunet', pythonPath: '/venv/python' };
   return { helper, shells };
 }
 
@@ -46,6 +46,7 @@ test('forwards supported acceleration controls without losing Python path', () =
   helper.python_start();
   assert.equal(shells[0].options.pythonPath, '/venv/python');
   assert.ok(shells[0].options.args.includes('--cameraLores=True'));
+  assert.ok(shells[0].options.args.includes('--cameraLoresFormat=RGB888'));
   assert.ok(shells[0].options.args.includes('--cameraFrameRate=15'));
   assert.ok(shells[0].options.args.includes('--method=yunet'));
 });

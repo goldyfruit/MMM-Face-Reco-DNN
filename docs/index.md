@@ -12,6 +12,7 @@ The existing `face-recognition-models` package depends on legacy `pkg_resources`
 | yunetScoreThreshold | 0.8 | Detection score cutoff; not a calibrated probability of identity |
 | yunetNmsThreshold | 0.3 | YuNet box suppression |
 | cameraLores | false | Process an ISP low-resolution stream |
+| cameraLoresFormat | YUV420 | Full-range portable YUV; RGB888 recommended on Pi5 |
 | cameraFrameRate | null | Optional sensor cap;15 FPS tested on Pi5 |
 | detectionUpsample | 1 | Preserve legacy HOG/CNN behaviour;0 may miss small faces |
 | identityMargin | 0 | Optional competing-identity distance gap; calibrate before enabling |

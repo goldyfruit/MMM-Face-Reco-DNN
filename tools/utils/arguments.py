@@ -52,6 +52,7 @@ class Arguments:
         parser.add_argument('-pw', '--processWidth', type=int, default=500)
         parser.add_argument('-roon', '--run-only-on-notification', type=int, choices=(0, 1), default=0)
         parser.add_argument('--cameraLores', type=Helper.str2bool, default=False)
+        parser.add_argument('--cameraLoresFormat', choices=('YUV420', 'RGB888'), default='YUV420')
         parser.add_argument('--cameraFrameRate', type=float, default=None)
         parser.add_argument('--detectionUpsample', type=int, choices=(0, 1, 2), default=1)
         parser.add_argument('--yunetModel', default=str(Path(__file__).resolve().parents[2] / 'model/face_detection_yunet_2023mar.onnx'))

@@ -2,7 +2,7 @@ Last Edit: Codex - 2026-11-02 - Motive: Document the tested Pi camera and face-d
 
 # Performance evidence and limits
 
-On mm01 Pi5 at2.8GHz, Python3.13/OpenCV4.10, seven repeats per scene:
+On the tested Pi5 at2.8GHz, Python3.13/OpenCV4.10, seven repeats per scene:
 
 | Scene | Legacy HOG median | YuNet median |
 |---|---:|---:|
@@ -21,3 +21,9 @@ The real Arducam64MP canary verified512x288 YUV420 processing,500x281 BGR detect
 Accuracy-related fixes have deterministic tests: independent face scores, safe box bounds, ambiguous enrollment rejection and annotation isolation. Optional identity margin is disabled by default to avoid uncalibrated false rejections. Existing face galleries stay private and unchanged.
 
 Primary references: [OpenCV YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet), [public NASA fixture provenance](https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.astronaut), [Picamera2 manual](https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf).
+
+Raw public benchmark: [pi5-detection.json](benchmarks/pi5-detection.json).
+
+Live deployment at500ms polling measured23.5% of one CPU core over30 seconds,60.9 C and no throttling. This is a scene-dependent sample, not a controlled family-accuracy comparison. Existing gallery bytes stayed unchanged; user confirmed correct recognition at normal standing distance.
+
+Final Pi5 rollout uses RGB888 lores directly, avoiding a full-/limited-range YUV mismatch. The real-camera RGB canary measured mean main/lores difference0.643 byte levels after resizing, verified full-resolution pixels and restart, and saved no images. Portable YUV420 now uses full-range Rec601 conversion with regression tests.

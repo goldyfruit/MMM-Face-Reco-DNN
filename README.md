@@ -14,6 +14,7 @@ This fork preserves existing dlib128 face galleries while adding an optional lig
     method: 'yunet',
     yunetScoreThreshold: 0.8,
     cameraLores: true,
+    cameraLoresFormat: 'RGB888',
     cameraFrameRate: 15,
     checkInterval: 500,
     processWidth: 500,

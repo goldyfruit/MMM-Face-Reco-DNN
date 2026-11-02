@@ -42,6 +42,38 @@ def _transform(
     return np.ascontiguousarray(image)
 
 
+def _sycc420_to_bgr(yuv: np.ndarray, size: tuple[int, int]) -> np.ndarray:
+    """Decode Picamera2 preview sYCC (full-range Rec.601) with its row padding.
+
+    OpenCV's direct I420 conversion assumes limited video range and would turn
+    full-range grey 32 into 19. Preview configurations instead default to sYCC.
+    Decode its separate planes through OpenCV's full-range YCrCb conversion;
+    preserve the main stream's sRGB primaries/transfer rather than changing the
+    whole camera to a limited-range video colour space.
+    """
+    width, height = size
+    if (
+        yuv.dtype != np.uint8
+        or yuv.ndim != 2
+        or width % 2
+        or height % 2
+        or yuv.shape[0] != height * 3 // 2
+        or yuv.shape[1] < width
+        or yuv.shape[1] % 2
+    ):
+        raise ValueError("Expected a packed 8-bit YUV420 low-resolution frame")
+    stride = yuv.shape[1]
+    flat = np.ascontiguousarray(yuv).reshape(-1)
+    y_size = height * stride
+    chroma_size = height // 2 * (stride // 2)
+    luminance = yuv[:height, :width]
+    cb = flat[y_size:y_size + chroma_size].reshape(height // 2, stride // 2)[:, :width // 2]
+    cr = flat[y_size + chroma_size:].reshape(height // 2, stride // 2)[:, :width // 2]
+    cb = cv2.resize(cb, size, interpolation=cv2.INTER_LINEAR)
+    cr = cv2.resize(cr, size, interpolation=cv2.INTER_LINEAR)
+    return cv2.cvtColor(cv2.merge((luminance, cr, cb)), cv2.COLOR_YCrCb2BGR)
+
+
 @dataclass
 class CameraFrame:
     """A request-owned frame whose full-resolution copy is materialized lazily.
@@ -85,9 +117,11 @@ class CameraStream:
     """Configure Picamera2 lazily and pair processing/enrollment per request.
 
     The optional low-resolution stream uses the camera ISP, not a second camera
-    consumer. A failure to configure it is reported rather than silently changing
-    capture behaviour. Set ``enable_lores=False`` for the legacy main-stream path.
-    No camera module is imported until an instance is constructed.
+    consumer. YUV420 is the portable choice; Pi 5 also supports RGB888, whose byte
+    order is already BGR and avoids chroma subsampling/conversion. A failure to
+    configure it is reported rather than silently changing capture behaviour.
+    Set ``enable_lores=False`` for the legacy main-stream path. No camera module
+    is imported until an instance is constructed.
     """
 
     def __init__(
@@ -100,6 +134,7 @@ class CameraStream:
         contrast: float = 0.0,
         rotation: int = -1,
         camera_factory: Callable[[], Any] | None = None,
+        lores_format: str = "YUV420",
     ) -> None:
         """Validate stream options and configure a camera without starting it."""
         if (
@@ -120,6 +155,8 @@ class CameraStream:
             raise ValueError("rotation must be -1, 0, 1 or 2")
         if not all(math.isfinite(float(value)) for value in (brightness, contrast)):
             raise ValueError("Brightness and contrast must be finite")
+        if lores_format not in ("YUV420", "RGB888"):
+            raise ValueError("lores_format must be YUV420 or RGB888")
         self.resolution = tuple(resolution)
         self.process_width = process_width
         self.lores_size = aligned_lores_size(self.resolution, process_width) if enable_lores else None
@@ -127,6 +164,7 @@ class CameraStream:
         self.brightness = float(brightness)
         self.contrast = float(contrast)
         self.rotation = rotation
+        self.lores_format = lores_format
         self._started = False
         self._closed = False
         if camera_factory is None:
@@ -141,15 +179,15 @@ class CameraStream:
                 "queue": False,
             }
             if self.lores_size is not None:
-                arguments["lores"] = {"size": self.lores_size, "format": "YUV420"}
+                arguments["lores"] = {"size": self.lores_size, "format": self.lores_format}
             if frame_rate is not None:
                 arguments["controls"] = {"FrameRate": float(frame_rate)}
             config = self._camera.create_preview_configuration(**arguments)
             self._camera.configure(config)
             if self.lores_size is not None:
                 lores_config = self._camera.stream_configuration("lores")
-                if lores_config["format"] != "YUV420":
-                    raise ValueError("Configured low-resolution stream must be YUV420")
+                if lores_config["format"] != self.lores_format:
+                    raise ValueError("Camera changed the requested low-resolution pixel format")
                 self.lores_size = tuple(lores_config["size"])
         except Exception:
             self._camera.close()
@@ -193,11 +231,20 @@ class CameraStream:
             )
             if self.lores_size is not None:
                 width, height = self.lores_size
-                yuv = request.make_array("lores")
-                if yuv.dtype != np.uint8 or yuv.ndim != 2 or yuv.shape[0] != height * 3 // 2:
-                    raise ValueError("Expected a packed 8-bit YUV420 low-resolution frame")
-                # Picamera2 retains YUV row padding. Convert before cropping it.
-                bgr = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_I420)[:height, :width]
+                lowres = request.make_array("lores")
+                if self.lores_format == "RGB888":
+                    if (
+                        lowres.dtype != np.uint8
+                        or lowres.ndim != 3
+                        or lowres.shape[2] != 3
+                        or lowres.shape[0] != height
+                        or lowres.shape[1] < width
+                    ):
+                        raise ValueError("Expected an 8-bit RGB888 low-resolution frame")
+                    # Libcamera's RGB888 stores B,G,R bytes (not R,G,B).
+                    bgr = lowres[:, :width]
+                else:
+                    bgr = _sycc420_to_bgr(lowres, (width, height))
                 image = _transform(bgr, self.brightness, self.contrast, self.rotation)
             else:
                 image = frame.full_frame()
