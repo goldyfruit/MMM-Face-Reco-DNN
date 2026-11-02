@@ -1,0 +1,8 @@
+{
+  "astronaut.png": {
+    "source": "https://raw.githubusercontent.com/scikit-image/scikit-image/v0.19.3/skimage/data/astronaut.png",
+    "sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+    "license": "Public domain, NASA; documented by scikit-image",
+    "license_reference": "https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.astronaut"
+  }
+}

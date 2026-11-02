@@ -1,151 +1,70 @@
+"""Validated command-line settings shared by enrollment and recognition."""
+
 import argparse
-from utils.helper import Helper
+import sys
+from pathlib import Path
+from typing import Any, Sequence
+
+# Retain imports by legacy standalone scripts that put tools/ on sys.path.
+if __package__ == 'utils':
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from tools.utils.helper import Helper
 
 
 class Arguments:
-    args = None
+    """Keep the legacy settings API while accepting explicit test arguments."""
 
-    def get(name):
+    args: dict[str, Any] = {}
+
+    @staticmethod
+    def get(name: str) -> Any:
+        """Return a parsed setting by its historical name."""
         return Arguments.args[name]
 
-    def prepareEncodingArguments():
-        ap = argparse.ArgumentParser()
-        ap.add_argument(
-            "-i",
-            "--dataset",
-            required=False,
-            default="../dataset/",
-            help="path to input directory of faces + images",
-        )
-        ap.add_argument(
-            "-e",
-            "--encodings",
-            required=False,
-            default="../model/encodings.pickle",
-            help="path to serialized db of facial encodings",
-        )
-        ap.add_argument(
-            "-d",
-            "--detection-method",
-            type=str,
-            default="hog",
-            help="face detection model to use: either `hog` or `cnn`",
-        )
+    @staticmethod
+    def prepareEncodingArguments(argv: Sequence[str] | None = None) -> None:
+        """Parse enrollment inputs without starting a camera."""
+        parser = argparse.ArgumentParser()
+        parser.add_argument('-i', '--dataset', default='../dataset/')
+        parser.add_argument('-e', '--encodings', default='../model/encodings.pickle')
+        parser.add_argument('-d', '--detection-method', choices=('hog', 'cnn'), default='hog')
+        Arguments.args = vars(parser.parse_args(argv))
 
-        Arguments.args = vars(ap.parse_args())
-
-    def prepareRecognitionArguments():
-        ap = argparse.ArgumentParser()
-        ap.add_argument(
-            "-c",
-            "--cascade",
-            type=str,
-            required=False,
-            default="../model/haarcascade_frontalface_default.xml",
-            help="path to where the face cascade resides",
-        )
-        ap.add_argument(
-            "-e",
-            "--encodings",
-            type=str,
-            required=False,
-            default="../model/encodings.pickle",
-            help="path to serialized db of facial encodings",
-        )
-        ap.add_argument(
-            "-r",
-            "--rotateCamera",
-            type=int,
-            required=False,
-            default=-1,
-            help="Rotate camera image (-1 = no rotation, 0 = 90°, 1 = 180°, 2 = 270°)",
-        )
-        ap.add_argument(
-            "-m",
-            "--method",
-            type=str,
-            required=False,
-            default="dnn",
-            help="method to detect faces (dnn, haar)",
-        )
-        ap.add_argument(
-            "-d",
-            "--detectionMethod",
-            type=str,
-            required=False,
-            default="hog",
-            help="face detection model to use: either `hog` or `cnn`",
-        )
-        ap.add_argument(
-            "-i",
-            "--interval",
-            type=int,
-            required=False,
-            default=2000,
-            help="interval between recognitions",
-        )
-        ap.add_argument(
-            "-o", "--output", type=int, required=False, default=0, help="Show output"
-        )
-        ap.add_argument(
-            "-omm",
-            "--outputmm",
-            type=int,
-            required=False,
-            default=0,
-            help="Show output on magic mirror",
-        )
-        ap.add_argument(
-            "-eds",
-            "--extendDataset",
-            type=Helper.str2bool,
-            required=False,
-            default=False,
-            help="Extend Dataset with unknown pictures",
-        )
-        ap.add_argument(
-            "-ds",
-            "--dataset",
-            required=False,
-            default="../dataset/",
-            help="path to input directory of faces + images",
-        )
-        ap.add_argument(
-            "-t",
-            "--tolerance",
-            type=float,
-            required=False,
-            default=0.6,
-            help="How much distance between faces to consider it a match. Lower is more strict.",
-        )
-        ap.add_argument(
-            "-br",
-            "--brightness",
-            default=0,
-            help="Brightness (0-100)",
-        )
-        ap.add_argument(
-            "-co",
-            "--contrast",
-            default=0,
-            help="Contrast (0-127)",
-        )
-        ap.add_argument(
-            "-res", "--resolution", default="1920,1080", help="Resolution of the image"
-        )
-        ap.add_argument(
-            "-pw",
-            "--processWidth",
-            type=int,
-            default=500,
-            help="Resolution of the image which will be processed from OpenCV",
-        )
-        ap.add_argument(
-            "-roon",
-            "--run-only-on-notification",
-            type=int,
-            default=0,
-            help="If 1, only runs face detection upon external trigger. If 0, face detection runs all the time.",
-        )
-
-        Arguments.args = vars(ap.parse_args())
+    @staticmethod
+    def prepareRecognitionArguments(argv: Sequence[str] | None = None) -> None:
+        """Parse legacy options and opt-in CPU/ISP detector improvements."""
+        parser = argparse.ArgumentParser()
+        parser.add_argument('-c', '--cascade', default='../model/haarcascade_frontalface_default.xml')
+        parser.add_argument('-e', '--encodings', default='../model/encodings.pickle')
+        parser.add_argument('-r', '--rotateCamera', type=int, choices=(-1, 0, 1, 2), default=-1)
+        parser.add_argument('-m', '--method', choices=('dnn', 'haar', 'yunet'), default='dnn')
+        parser.add_argument('-d', '--detectionMethod', choices=('hog', 'cnn'), default='hog')
+        parser.add_argument('-i', '--interval', type=int, default=2000)
+        parser.add_argument('-o', '--output', type=int, choices=(0, 1), default=0)
+        parser.add_argument('-omm', '--outputmm', type=int, choices=(0, 1), default=0)
+        parser.add_argument('-eds', '--extendDataset', type=Helper.str2bool, default=False)
+        parser.add_argument('-ds', '--dataset', default='../dataset/')
+        parser.add_argument('-t', '--tolerance', type=float, default=0.6)
+        parser.add_argument('-br', '--brightness', type=float, default=0)
+        parser.add_argument('-co', '--contrast', type=float, default=0)
+        parser.add_argument('-res', '--resolution', default='1920,1080')
+        parser.add_argument('-pw', '--processWidth', type=int, default=500)
+        parser.add_argument('-roon', '--run-only-on-notification', type=int, choices=(0, 1), default=0)
+        parser.add_argument('--cameraLores', type=Helper.str2bool, default=False)
+        parser.add_argument('--cameraFrameRate', type=float, default=None)
+        parser.add_argument('--detectionUpsample', type=int, choices=(0, 1, 2), default=1)
+        parser.add_argument('--yunetModel', default=str(Path(__file__).resolve().parents[2] / 'model/face_detection_yunet_2023mar.onnx'))
+        parser.add_argument('--yunetScoreThreshold', type=float, default=0.8)
+        parser.add_argument('--yunetNmsThreshold', type=float, default=0.3)
+        parser.add_argument('--yunetTopK', type=int, default=5000)
+        parser.add_argument('--identityMargin', type=float, default=0.0)
+        parser.add_argument('--previewQuality', type=int, default=95)
+        parsed = vars(parser.parse_args(argv))
+        if parsed['interval'] <= 0:
+            parser.error('interval must be positive')
+        if not 1 <= parsed['previewQuality'] <= 100:
+            parser.error('previewQuality must be between 1 and 100')
+        if not 0 < parsed['tolerance'] <= 2 or not 0 <= parsed['identityMargin'] <= 2:
+            parser.error('tolerance and identityMargin are outside their valid ranges')
+        Arguments.args = parsed

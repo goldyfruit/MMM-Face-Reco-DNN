@@ -1,0 +1,19 @@
+Last Edit: Codex - 2026-11-02 - Motive: Document the tested Pi camera and face-detection fork.
+
+# Evidence-based audit
+
+## Fixed with tests
+
+- Last-face distance reused in every preview label: [annotate](tools/recognition.py), [test_annotations_are_separate_and_use_per_face_distance](tests/test_recognition.py).
+- Multi-face photos enrolled under one identity: [encode_dataset](tools/utils/enrollment.py), [enrollment tests](tests/test_encode.py).
+- Preview annotation could contaminate saved training pixels: [CameraFrame.full_frame](tools/utils/camera.py) and [dataset tests](tests/test_recognition.py).
+- Camera/request leaks on failed processing or trigger-thread startup: [run](tools/recognition.py), [runtime tests](tests/test_runtime.py).
+- Invalid/mismatched galleries and out-of-bounds boxes: [FaceMatcher/FaceDetector](tools/utils/vision.py), [vision tests](tests/test_vision.py).
+
+## Remaining limits
+
+Private pickle galleries are trusted local input; do not load arbitrary remote pickle files. Existing automatically collected photos can contain prior mistakes and are not re-labelled by this fork. AEC/audio tuning is outside this module. This is not liveness detection or secure authentication. One public portrait with transformations cannot establish broad recognition accuracy. dlib embedding cost remains CPU-bound. The dependency `face-recognition-models` still needs the documented legacy pkg_resources compatibility dependency. See [performance](docs/performance.md) for measured scope and [suggestions](SUGGESTIONS.md) for next work.
+
+Actual tests were run before writing this audit:110Python and3Node tests passed; lint passed. Final totals may grow as asset/CI checks are added.
+
+Final pre-deployment checks:112 Python tests and3 Node tests pass; JavaScript lint passes. Official-model and public-fixture checksum checks pass. CI covers Python3.10/3.13 and Node24.

@@ -5,7 +5,7 @@
  * MIT Licensed.
  */
 
-/*global require, module, log*/
+/*global require, module*/
 
 'use strict';
 
@@ -40,8 +40,20 @@ module.exports = NodeHelper.create({
         '--resolution=' + this.config.resolution,
         '--processWidth=' + this.config.processWidth,
         '--run-only-on-notification=' + (this.config.external_trigger_notification !== '' ? '1' : '0'),
+        '--cameraLores=' + (this.config.cameraLores ? 'True' : 'False'),
+        '--detectionUpsample=' + (this.config.detectionUpsample ?? 1),
+        '--yunetModel=' + (this.config.yunetModel || 'modules/MMM-Face-Reco-DNN/model/face_detection_yunet_2023mar.onnx'),
+        '--yunetScoreThreshold=' + (this.config.yunetScoreThreshold ?? 0.8),
+        '--yunetNmsThreshold=' + (this.config.yunetNmsThreshold ?? 0.3),
+        '--yunetTopK=' + (this.config.yunetTopK ?? 5000),
+        '--identityMargin=' + (this.config.identityMargin ?? 0),
+        '--previewQuality=' + (this.config.previewQuality ?? 95),
       ],
     };
+
+    if (this.config.cameraFrameRate != null) {
+      options.args.push('--cameraFrameRate=' + this.config.cameraFrameRate);
+    }
 
     if (this.config.pythonPath != null && this.config.pythonPath !== '') {
       options.pythonPath = this.config.pythonPath;
@@ -49,6 +61,11 @@ module.exports = NodeHelper.create({
 
     // Start face reco script
     self.pyshell = new PythonShell('modules/' + this.name + '/tools/recognition.py', options);
+
+    self.pyshell.on('error', function (error) {
+      pythonStarted = false;
+      console.error('[' + self.name + '] Python worker failed: ' + error.message);
+    });
 
     // check if a message of the python script is comming in
     self.pyshell.on('message', function (message) {
@@ -89,7 +106,7 @@ module.exports = NodeHelper.create({
   },
 
   send_python_cmd: function (cmd) {
-    this.pyshell.send(cmd);
+    if (this.pyshell) this.pyshell.send(cmd);
   },
 
   python_stop: function () {
@@ -97,14 +114,13 @@ module.exports = NodeHelper.create({
   },
 
   destroy: function () {
-    const self = this
-    this.pyshell.end(function (err) {
-      if (err) throw err;
-      console.log('[' + self.name + '] ' + 'finished running...');
-    });
-
-    console.log('[' + this.name + '] ' + 'Terminate python');
-    this.pyshell.childProcess.kill();
+    const shell = this.pyshell;
+    this.pyshell = null;
+    pythonStarted = false;
+    if (!shell) return;
+    if (shell.childProcess && !shell.childProcess.killed) {
+      shell.childProcess.kill('SIGTERM');
+    }
   },
 
   socketNotificationReceived: function (notification, payload) {
@@ -121,7 +137,7 @@ module.exports = NodeHelper.create({
 
     // Notification for triggering face recognition received. Only send to python subprocess
     // if it has been started
-    if (notification === this.config.external_trigger_notification && pythonStarted) {
+    if (this.config && notification === this.config.external_trigger_notification && pythonStarted) {
       if (payload === true) {
         this.send_python_cmd('start');
       } else {

@@ -121,4 +121,12 @@ encodings.pickle
 dataset/*
 
 # node_modules
+core
+core.*
+*.pickle
+benchmark-results*.json
 node_modules
+core
+core.*
+*.pickle
+benchmark-results*.json

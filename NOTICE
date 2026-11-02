@@ -1,0 +1,6 @@
+MMM-Face-Reco-DNN fork
+
+Original code: Copyright Thierry Nischelwitzer and upstream contributors, MIT; see LICENSE.
+New independently authored camera, detector, enrollment and benchmark helpers and their tests: Apache-2.0; see SPDX notices and LICENSE-APACHE-2.0.
+YuNet model: MIT, upstream OpenCV Zoo; see model/LICENSE.YuNet and model/yunet-manifest.json.
+NASA astronaut fixture: public domain; see tests/fixtures/provenance.json.

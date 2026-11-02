@@ -1,54 +1,30 @@
-# import the necessary packages
-import face_recognition
-import pickle
-import cv2
-import os
-from utils.image import Image
-from utils.arguments import Arguments
+"""Command-line gallery enrollment; importing this module does not run a job."""
 
-# construct the argument parser and parse the arguments
-Arguments.prepareEncodingArguments()
+from pathlib import Path
+import sys
 
-# grab the paths to the input images in our dataset
-print("[INFO] quantifying faces...")
-imagePaths = list(Image.list_images(Arguments.get("dataset")))
+# Retain ``python tools/encode.py`` while using absolute package imports.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# initialize the list of known encodings and known names
-knownEncodings = []
-knownNames = []
+from tools.utils.arguments import Arguments
+from tools.utils.enrollment import encode_dataset
 
-# loop over the image paths
-for i, imagePath in enumerate(imagePaths):
-    # extract the person name from the image path
-    print(
-        "[INFO] processing image {}/{} - {}".format(i + 1, len(imagePaths), imagePath)
-    )
-    name = os.path.basename(os.path.dirname(imagePath))
 
-    # load the input image and convert it from RGB (OpenCV ordering)
-    # to dlib ordering (RGB)
-    image = cv2.imread(imagePath)
-    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+def main() -> int:
+    """Enroll labelled images and report failure without erasing a valid gallery."""
+    Arguments.prepareEncodingArguments()
+    try:
+        statistics = encode_dataset(
+            dataset=Arguments.get("dataset"),
+            output=Arguments.get("encodings"),
+            detection_method=Arguments.get("detection_method"),
+        )
+    except (OSError, ValueError) as error:
+        print(f"[ERROR] Enrollment failed: {error}", file=sys.stderr)
+        return 1
+    return 0 if statistics.output_written else 1
 
-    # detect the (x, y)-coordinates of the bounding boxes
-    # corresponding to each face in the input image
-    boxes = face_recognition.face_locations(
-        rgb, model=Arguments.get("detection_method")
-    )
 
-    # compute the facial embedding for the face
-    encodings = face_recognition.face_encodings(rgb, boxes)
-
-    # loop over the encodings
-    for encoding in encodings:
-        # add each encoding + name to our set of known names and
-        # encodings
-        knownEncodings.append(encoding)
-        knownNames.append(name)
-
-# dump the facial encodings + names to disk
-print("[INFO] serializing encodings...")
-data = {"encodings": knownEncodings, "names": knownNames}
-f = open(Arguments.get("encodings"), "wb")
-f.write(pickle.dumps(data))
-f.close()
+if __name__ == "__main__":
+    raise SystemExit(main())

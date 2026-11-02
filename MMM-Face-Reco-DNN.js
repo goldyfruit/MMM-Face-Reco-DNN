@@ -5,7 +5,7 @@
  * MIT Licensed.
  */
 
-/*global log*/
+/*global Log, Module*/
 
 'use strict';
 
@@ -44,6 +44,18 @@ Module.register('MMM-Face-Reco-DNN', {
     // which face detection model to use. "hog" is less accurate but faster on CPUs. "cnn" is a more accurate
     // deep-learning model which is GPU/CUDA accelerated (if available). The default is "hog".
     detectionMethod: 'hog',
+    // Optional CPU YuNet detector; existing dlib face encodings stay compatible.
+    yunetModel: 'modules/MMM-Face-Reco-DNN/model/face_detection_yunet_2023mar.onnx',
+    yunetScoreThreshold: 0.8,
+    yunetNmsThreshold: 0.3,
+    yunetTopK: 5000,
+    detectionUpsample: 1,
+    // Reject close competing identities when positive; zero preserves legacy matching.
+    identityMargin: 0,
+    // Opt-in ISP detection stream and sensor frame-rate cap.
+    cameraLores: false,
+    cameraFrameRate: null,
+    previewQuality: 95,
     // how fast in ms should the modules hide and show (face effect)
     animationSpeed: 0,
     // Path to Python to run the face recognition (null / '' means default path)
@@ -71,10 +83,10 @@ Module.register('MMM-Face-Reco-DNN', {
     outputmm: 0,
     // turn on extra debugging 0=no, 1=yes
     debug: 0,
-    // If specified, conditionally run face recognition when a notification with a name as specified by this 
-    // option is received with a boolean true/false payload. A True payload activates face recognition, False 
-    // deactivates it. An empty string here disables this functionality so face recognition always runs. Use for 
-    // exmaple with with MMM-Pir with notification name 'MMM_PIR-SCREEN_POWERSTATUS' to only run face 
+    // If specified, conditionally run face recognition when a notification with a name as specified by this
+    // option is received with a boolean true/false payload. A True payload activates face recognition, False
+    // deactivates it. An empty string here disables this functionality so face recognition always runs. Use for
+    // exmaple with with MMM-Pir with notification name 'MMM_PIR-SCREEN_POWERSTATUS' to only run face
     // recognition when screen is on.
     external_trigger_notification: '',
   },
@@ -475,8 +487,7 @@ Module.register('MMM-Face-Reco-DNN', {
 
     // If an external trigger notification name is specified, forward
     // notification payload received on that notification name.
-    if (this.config.external_trigger_notification !== "" &&
-        notification === this.config.external_trigger_notification) {
+    if (this.config.external_trigger_notification !== '' && notification === this.config.external_trigger_notification) {
       this.sendSocketNotification(notification, payload);
     }
   },

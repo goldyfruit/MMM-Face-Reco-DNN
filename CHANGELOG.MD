@@ -1,3 +1,9 @@
+Last Edit: Codex - 2026-11-02 - Motive: Document the tested Pi camera and face-detection fork.
+
+# Fork2.1.0
+
+Optional YuNet/ISP pipeline, safe enrollment, per-face confidence and tested lifecycle cleanup. Existing galleries remain compatible.
+
 # 2.0.2 (2024-11-12)
 - Added feature to conditionally trigger face recognition to start and stop via a Magic Mirror notification. Use of this feature is optional. Use for example with MMM-Pir to turn off face recognition when monitor is off, and back on when monitor is on.
   - node_helper sends commands to the python child process via its std input upon receiving an external notfication. 
