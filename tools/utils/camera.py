@@ -3,15 +3,65 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 import math
+from numbers import Integral, Real
 from typing import Any, Callable, Iterator
 
 import cv2
 import numpy as np
 
 from tools.utils.image import Image
+from tools.utils.focus import FaceFocusController, rectangle, supports
+
+
+CameraMetadataValue = bool | int | float
+
+# Keep diagnostics independent of image buffers, identities and arbitrary metadata.
+_METADATA_FIELDS = frozenset(
+    (
+        "SensorTimestamp",
+        "ExposureTime",
+        "FrameDuration",
+        "AnalogueGain",
+        "DigitalGain",
+        "LensPosition",
+        "AfMode",
+        "AfState",
+        "AeExposureMode",
+        "AeLocked",
+        "AwbLocked",
+        "ColourTemperature",
+        "Lux",
+        "FocusFoM",
+    )
+)
+
+
+def _redacted_metadata(metadata: object) -> dict[str, CameraMetadataValue]:
+    """Copy a bounded allowlist of finite scalar camera diagnostics only."""
+    if not isinstance(metadata, Mapping):
+        return {}
+    result: dict[str, CameraMetadataValue] = {}
+    for key in _METADATA_FIELDS:
+        value = metadata.get(key)
+        if isinstance(value, (bool, np.bool_)):
+            result[key] = bool(value)
+        elif isinstance(value, Integral):
+            if -(2**63) <= value < 2**63:
+                result[key] = int(value)
+        elif isinstance(value, Real):
+            number = float(value)
+            if math.isfinite(number) and abs(number) < 2**63:
+                result[key] = number
+    return result
+
+
+def _advertises_value(controls: object, name: str, value: int | float) -> bool:
+    """Check a Picamera2 control and its advertised numeric range when present."""
+    return supports(controls, name, value)
 
 
 def aligned_lores_size(
@@ -93,6 +143,19 @@ class CameraFrame:
     _rotation: int = field(default=-1, repr=False)
     _cached_main: np.ndarray | None = field(default=None, repr=False)
     _released: bool = field(default=False, init=False, repr=False)
+    _metadata: dict[str, CameraMetadataValue] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _focus_crop: tuple[int, int, int, int] | None = field(
+        default=None, init=False, repr=False
+    )
+    _owner: object | None = field(default=None, init=False, repr=False)
+    _focus_updated: bool = field(default=False, init=False, repr=False)
+
+    @property
+    def metadata(self) -> dict[str, CameraMetadataValue]:
+        """Return detached, redacted diagnostics from this exact camera request."""
+        return self._metadata.copy()
 
     def full_frame(self) -> np.ndarray:
         """Return an independent, unannotated full-resolution BGR image."""
@@ -125,7 +188,12 @@ class CameraStream:
     order is already BGR and avoids chroma subsampling/conversion. A failure to
     configure it is reported rather than silently changing capture behaviour.
     Set ``enable_lores=False`` for the legacy main-stream path. No camera module
-    is imported until an instance is constructed.
+    is imported until an instance is constructed. Autofocus and exposure presets
+    are applied only when advertised, so fixed-focus and USB cameras retain their
+    existing behaviour. The default leaves lens controls untouched; continuous
+    AF is opt-in because reflective surfaces can pull focus onto the foreground.
+    ``autofocus="face"`` keeps a seed until a face-window scan can be requested.
+    An explicit ``lens_position`` in dioptres is valid with manual or face focus.
     """
 
     def __init__(
@@ -139,6 +207,9 @@ class CameraStream:
         rotation: int = -1,
         camera_factory: Callable[[], Any] | None = None,
         lores_format: str = "YUV420",
+        autofocus: str = "default",
+        exposure_mode: str = "normal",
+        lens_position: float | None = None,
     ) -> None:
         """Validate stream options and configure a camera without starting it."""
         if len(resolution) != 2 or any(
@@ -164,6 +235,20 @@ class CameraStream:
             raise ValueError("Brightness and contrast must be finite")
         if lores_format not in ("YUV420", "RGB888"):
             raise ValueError("lores_format must be YUV420 or RGB888")
+        if autofocus not in ("default", "continuous", "manual", "face"):
+            raise ValueError("autofocus must be default, continuous, manual or face")
+        if exposure_mode not in ("normal", "short"):
+            raise ValueError("exposure_mode must be normal or short")
+        if lens_position is not None:
+            if (
+                isinstance(lens_position, bool)
+                or not isinstance(lens_position, Real)
+                or not math.isfinite(float(lens_position))
+                or lens_position < 0
+            ):
+                raise ValueError("lens_position must be finite and non-negative")
+            if autofocus not in ("manual", "face"):
+                raise ValueError("lens_position requires manual or face autofocus mode")
         self.resolution = tuple(resolution)
         self.process_width = process_width
         self.lores_size = (
@@ -174,6 +259,13 @@ class CameraStream:
         self.contrast = float(contrast)
         self.rotation = rotation
         self.lores_format = lores_format
+        self.autofocus = autofocus
+        self.exposure_mode = exposure_mode
+        self.lens_position = None if lens_position is None else float(lens_position)
+        self._latest_metadata: dict[str, CameraMetadataValue] = {}
+        self._configured_controls: dict[str, float | int] = {}
+        self._frame_owner = object()
+        self._face_focus: FaceFocusController | None = None
         self._started = False
         self._closed = False
         if camera_factory is None:
@@ -191,11 +283,56 @@ class CameraStream:
                 arguments["lores"] = {
                     "size": self.lores_size,
                     "format": self.lores_format,
+                    "preserve_ar": False,  # Picamera2 explicitly shares main's crop.
                 }
+            controls: dict[str, float | int] = {}
             if frame_rate is not None:
-                arguments["controls"] = {"FrameRate": float(frame_rate)}
+                controls["FrameRate"] = float(frame_rate)
+            advertised = getattr(self._camera, "camera_controls", {})
+            if autofocus == "face" and self.lens_position is None:
+                bounds = (
+                    advertised.get("LensPosition")
+                    if isinstance(advertised, Mapping)
+                    else None
+                )
+                default = (
+                    bounds[2]
+                    if isinstance(bounds, (tuple, list)) and len(bounds) >= 3
+                    else None
+                )
+                self.lens_position = (
+                    float(default)
+                    if isinstance(default, Real)
+                    and not isinstance(default, bool)
+                    and math.isfinite(float(default))
+                    and default >= 0
+                    else 1.0
+                )
+            # Values follow libcamera's public control enums; keep imports lazy.
+            if autofocus != "default":
+                af_mode = 2 if autofocus == "continuous" else 0
+                if _advertises_value(advertised, "AfMode", af_mode):
+                    controls["AfMode"] = af_mode
+                    if autofocus == "continuous" and _advertises_value(
+                        advertised, "AfRange", 0
+                    ):
+                        controls["AfRange"] = 0  # Normal, not the macro range.
+                    if (
+                        autofocus in ("manual", "face")
+                        and self.lens_position is not None
+                        and _advertises_value(
+                            advertised, "LensPosition", self.lens_position
+                        )
+                    ):
+                        controls["LensPosition"] = self.lens_position
+            ae_mode = 0 if exposure_mode == "normal" else 1
+            if _advertises_value(advertised, "AeExposureMode", ae_mode):
+                controls["AeExposureMode"] = ae_mode
+            if controls:
+                arguments["controls"] = controls
             config = self._camera.create_preview_configuration(**arguments)
             self._camera.configure(config)
+            self._configured_controls = controls.copy()
             if self.lores_size is not None:
                 lores_config = self._camera.stream_configuration("lores")
                 if lores_config["format"] != self.lores_format:
@@ -203,22 +340,77 @@ class CameraStream:
                         "Camera changed the requested low-resolution pixel format"
                     )
                 self.lores_size = tuple(lores_config["size"])
+            if autofocus == "face":
+                properties = getattr(self._camera, "camera_properties", {})
+                maximum = (
+                    properties.get("ScalerCropMaximum")
+                    if isinstance(properties, Mapping)
+                    else None
+                )
+                self._face_focus = FaceFocusController(
+                    advertised,
+                    maximum,
+                    getattr(self._camera, "set_controls", None),
+                    controls.get("LensPosition"),
+                    rotation,
+                )
         except Exception:
             self._camera.close()
             self._closed = True
             raise
+
+    @property
+    def configured_controls(self) -> dict[str, float | int]:
+        """Return requested advertised presets, without claiming AF convergence."""
+        return self._configured_controls.copy()
+
+    @property
+    def latest_metadata(self) -> dict[str, CameraMetadataValue]:
+        """Return the latest successful frame's diagnostics, cleared on pause."""
+        return self._latest_metadata.copy()
+
+    @property
+    def face_focus_status(self) -> dict[str, Any]:
+        """Return image-free ROI/settling status for optional face-directed AF."""
+        if self._face_focus is None:
+            return {"supported": False, "state": "disabled", "settled": True}
+        return self._face_focus.status
+
+    def focus_on_faces(
+        self, frame: CameraFrame, boxes: Sequence[Sequence[float]]
+    ) -> bool:
+        """Focus on detected geometry from this active request, never identities."""
+        if self._face_focus is None:
+            return False
+        if frame._released or frame._owner is not self._frame_owner:
+            raise ValueError("Face focus requires this stream's active camera frame")
+        if frame._focus_updated:
+            return False
+        frame._focus_updated = True
+        return self._face_focus.update(
+            boxes,
+            frame.processing_frame.shape[:2],
+            frame._focus_crop,
+            frame.metadata,
+        )
 
     def start(self) -> None:
         """Start the configured camera, including after an external pause."""
         if self._closed:
             raise RuntimeError("Camera stream is closed")
         if not self._started:
+            self._latest_metadata.clear()
+            if self._face_focus is not None:
+                self._face_focus.resume()
             self._camera.start()
             self._started = True
 
     def stop(self) -> None:
         """Pause capture idempotently without losing the configured streams."""
+        self._latest_metadata.clear()
         if self._started:
+            if self._face_focus is not None:
+                self._face_focus.pause()
             self._camera.stop()
             self._started = False
 
@@ -236,6 +428,7 @@ class CameraStream:
         """Yield a fresh processing frame and always release its camera request."""
         if self._closed or not self._started:
             raise RuntimeError("Camera stream must be started before capture")
+        self._latest_metadata.clear()
         request = self._camera.capture_request()
         frame: CameraFrame | None = None
         try:
@@ -246,6 +439,23 @@ class CameraStream:
                 self.contrast,
                 self.rotation,
             )
+            frame._owner = self._frame_owner
+            get_metadata = getattr(request, "get_metadata", None)
+            if callable(get_metadata):
+                metadata = get_metadata()
+                frame._metadata = _redacted_metadata(metadata)
+                if isinstance(metadata, Mapping):
+                    # Pi5 reports per-stream crops in processed stream order.
+                    # Do not substitute stream0 when a malformed per-stream list
+                    # is supplied. Without this newer metadata, lores is known to
+                    # share main's crop because preserve_ar=False is set above.
+                    if "ScalerCrops" in metadata:
+                        crops = metadata["ScalerCrops"]
+                        index = 1 if self.lores_size is not None else 0
+                        if isinstance(crops, (list, tuple)) and len(crops) > index:
+                            frame._focus_crop = rectangle(crops[index])
+                    else:
+                        frame._focus_crop = rectangle(metadata.get("ScalerCrop"))
             if self.lores_size is not None:
                 width, height = self.lores_size
                 lowres = request.make_array("lores")
@@ -270,6 +480,7 @@ class CameraStream:
             if self.process_width and image.shape[1] != self.process_width:
                 image = Image.resize(image, width=self.process_width)
             frame.processing_frame = image.copy()
+            self._latest_metadata = frame.metadata
             yield frame
         finally:
             if frame is None:

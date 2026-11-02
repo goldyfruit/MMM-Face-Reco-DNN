@@ -1,6 +1,7 @@
 """Validated command-line settings shared by enrollment and recognition."""
 
 import argparse
+import math
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -71,6 +72,17 @@ class Arguments:
         )
         parser.add_argument("--cameraFrameRate", type=float, default=None)
         parser.add_argument(
+            "--cameraAutofocus",
+            choices=("default", "continuous", "manual", "face"),
+            default="default",
+        )
+        parser.add_argument("--cameraLensPosition", type=float, default=None)
+        parser.add_argument(
+            "--cameraExposureMode",
+            choices=("normal", "short"),
+            default="normal",
+        )
+        parser.add_argument(
             "--opencvThreads",
             type=int,
             default=0,
@@ -96,6 +108,12 @@ class Arguments:
             parser.error("interval must be positive")
         if not 0 <= parsed["opencvThreads"] <= 64:
             parser.error("opencvThreads must be between 0 and 64")
+        lens_position = parsed["cameraLensPosition"]
+        if lens_position is not None:
+            if not math.isfinite(lens_position) or lens_position < 0:
+                parser.error("cameraLensPosition must be finite and nonnegative")
+            if parsed["cameraAutofocus"] not in ("manual", "face"):
+                parser.error("cameraLensPosition requires manual or face autofocus")
         if not 1 <= parsed["previewQuality"] <= 100:
             parser.error("previewQuality must be between 1 and 100")
         if not 0 < parsed["tolerance"] <= 2 or not 0 <= parsed["identityMargin"] <= 2:

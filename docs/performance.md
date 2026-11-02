@@ -1,4 +1,4 @@
-Last Edit: Codex - 2026-11-02 - Motive: Document the tested Pi camera and face-detection fork.
+Last Edit: Codex - 2026-11-02 - Motive: Document advertised camera controls and tested worker/session recovery.
 
 # Performance evidence and limits
 
@@ -31,3 +31,13 @@ Final Pi5 rollout uses RGB888 lores directly, avoiding a full-/limited-range YUV
 ## YuNet thread scaling
 
 On the same500x281 public scene, nine repeats after warm-up:4threads measured22.8–25.0ms median wall time and65–68ms CPU time;2threads measured22.7–25.4ms wall and41–43ms CPU. One thread measured27.6ms wall/26.8ms CPU. The Pi uses explicit `opencvThreads:2` to reduce detector CPU consumption by about36% with similar wall latency. Default0 retains library behaviour for other users. Reproduce with `python tools/benchmark.py --opencv-threads 2`.
+
+## Camera-control and recovery follow-up
+
+Version 2.2.0 does not claim another detector FPS or recognition-accuracy gain. Existing focus remains the generic default. A continuous-AF mirror trial moved to a reported lens position of about 5.79 rather than the prior 1.0 and user recognition regressed; foreground/reflections are a plausible cause. Optional face-window AF targets detected geometry using the actual capture crop/rotation instead of relying on default camera metering. It does not require recognition to acquire a target. A subsequent local trial observed real scanning-to-focus transitions and usable PDAF. The user confirmed recognition at normal standing distance and after small distance changes; vendor lens values are not measurements of the person's distance.
+
+The [FaceFocusController](../tools/utils/focus.py#L121) bounds each scan to six seconds and imposes a global 30-second cooldown after failure, even if the face ROI moves. It verifies a fresh manual-seed frame before scanning/resuming. Restoration requires matching lens metadata; if unverified after two seconds while faces remain visible, the worker faults rather than treating the frame as settled. Identity changes/enrollment wait through bounded scans/restoration; preview continues and no-face cancellation allows normal logout. Optional short AE remains a room-dependent blur/noise tradeoff.
+
+Worker failure/pause immediately clears stale sessions and preview rather than waiting for the ordinary 15-second disappearance grace. Fake-clock tests verify bounded 1/2/4-second early retries, no replacement before process closure, stop/pause semantics and correct multi-user logout timing. Activation generations renew readiness and identity snapshots after quick stop/start, including the same known face. The installed PythonShell formatter test verifies plain stdin commands with JSON stdout.
+
+Current source validation: 210 Python tests on actual Python 3.10.22 and 3.13.11, including 80 camera/controller and 50 runtime tests, plus 22 Node tests and lint/format checks. [Camera tests](../tests/test_camera.py), [runtime tests](../tests/test_runtime.py) and [Node tests](../tests/test_node_helper.cjs) use synthetic data and controls. The separate in-room hardware check passed; those unit results alone do not establish physical focus or general recognition accuracy. No private media or gallery data was exported.

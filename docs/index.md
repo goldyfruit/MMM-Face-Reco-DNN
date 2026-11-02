@@ -1,4 +1,4 @@
-Last Edit: Codex - 2026-11-02 - Motive: Document the tested Pi camera and face-detection fork.
+Last Edit: Codex - 2026-11-02 - Motive: Document advertised camera controls and tested worker/session recovery.
 
 # Installation and configuration
 
@@ -24,3 +24,29 @@ The existing `face-recognition-models` package depends on legacy `pkg_resources`
 `tools/encode.py` still writes `encodings`/`names` pickle keys. [encode_dataset](../tools/utils/enrollment.py) skips unreadable/no-face/multi-face images, preserves top-level identity labels in nested folders, and replaces a valid gallery atomically only after usable enrollment. Review automatically collected photos before retraining; this is personalization, not liveness/authentication.
 
 Back up the current module, user config, face gallery and dataset before switching branches. Preserve local lockfile changes and untracked tools. Keep original MIT notices and model attribution. For results and boundaries see [performance](performance.md), [audit](../AUDIT.md), [FAQ](../FAQ.md), [maintenance](../MAINTENANCE_REPORT.md).
+
+## Advertised camera controls
+
+| Setting | Default | Supported choices / behaviour |
+|---|---|---|
+| cameraAutofocus | default | Preserve existing focus; optional continuous, manual or face-window AF |
+| cameraLensPosition | null | Optional finite nonnegative dioptres with manual/face AF and an advertised in-range control; 1.0 is about one metre, 0 is infinity |
+| cameraExposureMode | normal | normal or short; only an advertised AeExposureMode value is applied |
+| workerRestartDelay | 1000 | Integer 100–30000 ms base; exponential backoff capped at 30000 ms |
+| workerRestartLimit | 3 | Integer 0–10; 0 disables automatic retry |
+
+[CameraStream](../tools/utils/camera.py#L199) checks advertised controls and preserves unsupported/fixed-focus behavior. Continuous AF requests Normal range when available but remains opt-in: it selected a nearer focus and recognition regressed in the mirror trial. Foreground/reflections are a plausible explanation, not established by lens metadata alone. Normal exposure remains default; optional short exposure needs a real-room blur/noise comparison. Scalar camera metadata excludes pixels and identity names.
+
+### Opt-in face-window autofocus
+
+Set `cameraAutofocus:'face'` to target detected geometry instead of default metering. [FaceFocusController](../tools/utils/focus.py#L121) maps rotated/resized face boxes through the same capture's sensor crop, selects the largest valid face deterministically and requires advertised window metering/trigger support. Recognition is not required. The mode begins from an advertised manual seed (`cameraLensPosition`, or 1.0 dioptre) and verifies its LensPosition on a fresh frame before requesting a scan; unsupported ROI AF retains a safe baseline rather than silently switching to global continuous AF.
+
+`camera.face_focus_status` provides bounded image-free state/geometry diagnostics. Pending scans/restoration defer identity changes and dataset extension while detection/preview continue. No-face cancellation permits normal logout. Scans time out after six seconds; failure imposes a global 30-second cooldown even when the ROI changes. A restoration unverified by metadata after two seconds faults the worker while faces are present instead of publishing unsettled identities. Physical focus/recognition validation is pending; do not infer success from mocked controls.
+
+### Worker lifecycle
+
+[run](../tools/recognition.py#L152) renews readiness after a processed/released capture at startup and resume, including no-face/no-preview operation. Activation generations also reconcile identity snapshots so the same known face reopens its session after quick pause/resume, while stale in-flight identity/enrollment results are rejected. The actual PythonShell text stdin formatter preserves plain commands with JSON stdout.
+
+[Helper recovery](../node_helper.js#L27) clears stale sessions/preview immediately through [frontend reset](../MMM-Face-Reco-DNN.js#L405), waits for old-process closure, and bounds retries. Explicit stop/pause suppresses retries and queued activity; a process that ran at least 60 seconds gets a fresh early-failure budget. Normal multi-user logout callbacks bind users independently and emit logout after expiry. This remains personalization, not authentication/liveness.
+
+Current validation: 210 Python tests pass under actual Python 3.10.22 and 3.13.11, including 80 camera/controller and 50 runtime tests; 22 Node tests and lint/format checks pass. See [camera tests](../tests/test_camera.py), [runtime tests](../tests/test_runtime.py) and [audit](../AUDIT.md). Primary AF semantics are documented in [libcamera control definitions](https://github.com/raspberrypi/libcamera/blob/main/src/libcamera/control_ids_core.yaml); [Picamera2 configuration](https://github.com/raspberrypi/picamera2/blob/main/picamera2/picamera2.py) shares the main crop with preview lores when aspect preservation is disabled.
