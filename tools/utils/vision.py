@@ -107,7 +107,9 @@ class FaceDetector:
             raise ValueError("Upsampling must be a nonnegative integer")
         for name, value in (("score", score_threshold), ("NMS", nms_threshold)):
             if not math.isfinite(value) or not 0 < value <= 1:
-                raise ValueError(f"{name} threshold must be greater than 0 and at most 1")
+                raise ValueError(
+                    f"{name} threshold must be greater than 0 and at most 1"
+                )
         if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k <= 0:
             raise ValueError("YuNet top_k must be a positive integer")
         self.method = method
@@ -131,15 +133,25 @@ class FaceDetector:
                     raise ValueError("Could not load Haar cascade")
             else:
                 if yunet_model is None or not Path(yunet_model).is_file():
-                    raise FileNotFoundError("YuNet requires an existing ONNX model file")
+                    raise FileNotFoundError(
+                        "YuNet requires an existing ONNX model file"
+                    )
                 create = getattr(self._cv, "FaceDetectorYN_create", None)
                 if create is None:
-                    create = getattr(getattr(self._cv, "FaceDetectorYN", None), "create", None)
+                    create = getattr(
+                        getattr(self._cv, "FaceDetectorYN", None), "create", None
+                    )
                 if create is None:
-                    raise RuntimeError("This OpenCV build does not provide FaceDetectorYN")
+                    raise RuntimeError(
+                        "This OpenCV build does not provide FaceDetectorYN"
+                    )
                 self._detector = create(
-                    str(yunet_model), "", (320, 320), score_threshold,
-                    nms_threshold, top_k,
+                    str(yunet_model),
+                    "",
+                    (320, 320),
+                    score_threshold,
+                    nms_threshold,
+                    top_k,
                 )
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
@@ -149,7 +161,8 @@ class FaceDetector:
         detections: list[Detection] = []
         if self.method == "dnn":
             boxes = self._face.face_locations(
-                to_rgb(bgr), number_of_times_to_upsample=self.upsample,
+                to_rgb(bgr),
+                number_of_times_to_upsample=self.upsample,
                 model=self.detection_method,
             )
             for box in boxes:
@@ -159,7 +172,10 @@ class FaceDetector:
         elif self.method == "haar":
             gray = self._cv.cvtColor(bgr, self._cv.COLOR_BGR2GRAY)
             rectangles = self._detector.detectMultiScale(
-                gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30),
+                gray,
+                scaleFactor=1.1,
+                minNeighbors=5,
+                minSize=(30, 30),
                 flags=self._cv.CASCADE_SCALE_IMAGE,
             )
             for x, y, w, h in rectangles:
@@ -241,8 +257,12 @@ class FaceMatcher:
             ]
             ambiguous = bool(other and min(other) - distance < self.identity_margin)
         accepted = distance < self.tolerance and not ambiguous and name != "unknown"
-        return RecognitionMatch(name if accepted else "unknown", distance, accepted, ambiguous)
+        return RecognitionMatch(
+            name if accepted else "unknown", distance, accepted, ambiguous
+        )
 
-    def match_many(self, encodings: Iterable[Sequence[float]]) -> list[RecognitionMatch]:
+    def match_many(
+        self, encodings: Iterable[Sequence[float]]
+    ) -> list[RecognitionMatch]:
         """Evaluate each face independently, preserving result order."""
         return [self.match(encoding) for encoding in encodings]

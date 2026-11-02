@@ -75,10 +75,12 @@ def synthetic_camera() -> tuple[CameraDouble, RequestDouble]:
     main = np.empty((48, 64, 4), dtype=np.uint8)
     main[:] = (10, 20, 30, 255)
     small = np.full((24, 32, 3), (0, 0, 255), dtype=np.uint8)
-    request = RequestDouble({
-        "main": main,
-        "lores": full_range_sycc420(small),
-    })
+    request = RequestDouble(
+        {
+            "main": main,
+            "lores": full_range_sycc420(small),
+        }
+    )
     return CameraDouble(request), request
 
 
@@ -87,9 +89,15 @@ def full_range_sycc420(bgr: np.ndarray) -> np.ndarray:
     height, width = bgr.shape[:2]
     converted = cv2.cvtColor(bgr, cv2.COLOR_BGR2YCrCb)
     y = converted[:, :, 0]
-    cb = cv2.resize(converted[:, :, 2], (width // 2, height // 2), interpolation=cv2.INTER_AREA)
-    cr = cv2.resize(converted[:, :, 1], (width // 2, height // 2), interpolation=cv2.INTER_AREA)
-    return np.concatenate((y.reshape(-1), cb.reshape(-1), cr.reshape(-1))).reshape(height * 3 // 2, width)
+    cb = cv2.resize(
+        converted[:, :, 2], (width // 2, height // 2), interpolation=cv2.INTER_AREA
+    )
+    cr = cv2.resize(
+        converted[:, :, 1], (width // 2, height // 2), interpolation=cv2.INTER_AREA
+    )
+    return np.concatenate((y.reshape(-1), cb.reshape(-1), cr.reshape(-1))).reshape(
+        height * 3 // 2, width
+    )
 
 
 def test_lores_size_preserves_common_aspect_ratio_and_alignment() -> None:
@@ -142,9 +150,15 @@ def test_padding_is_removed_after_yuv_conversion() -> None:
         assert np.allclose(frame.processing_frame[:, -1], (0, 0, 255), atol=2)
 
 
-@pytest.mark.parametrize("color", [
-    (32, 32, 32), (224, 224, 224), (70, 120, 170), (130, 160, 200),
-])
+@pytest.mark.parametrize(
+    "color",
+    [
+        (32, 32, 32),
+        (224, 224, 224),
+        (70, 120, 170),
+        (130, 160, 200),
+    ],
+)
 def test_sycc_full_range_preserves_grey_and_color(color: tuple[int, int, int]) -> None:
     """Do not decode full-range preview values with limited-range I420 math."""
     camera, request = synthetic_camera()
@@ -161,14 +175,20 @@ def test_sycc_full_range_preserves_grey_and_color(color: tuple[int, int, int]) -
             assert tuple(frame.processing_frame[0, 0]) == color
 
 
-def test_rgb888_lores_keeps_bgr_byte_order_without_conversion(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_rgb888_lores_keeps_bgr_byte_order_without_conversion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Pi5 RGB888 output is already BGR and needs neither I420 nor channel swap."""
     camera, request = synthetic_camera()
     lowres = np.full((24, 40, 3), (10, 20, 30), dtype=np.uint8)
     lowres[:, 32:] = (200, 150, 100)  # Simulate row padding without leaking it.
     request.arrays["lores"] = lowres
     stream = CameraStream(
-        (64, 48), 32, True, camera_factory=lambda: camera, lores_format="RGB888",
+        (64, 48),
+        32,
+        True,
+        camera_factory=lambda: camera,
+        lores_format="RGB888",
     )
     stream.start()
 
@@ -190,7 +210,11 @@ def test_invalid_rgb888_frame_releases_request() -> None:
     camera, request = synthetic_camera()
     request.arrays["lores"] = np.zeros((24, 32, 4), dtype=np.uint8)
     stream = CameraStream(
-        (64, 48), 32, True, camera_factory=lambda: camera, lores_format="RGB888",
+        (64, 48),
+        32,
+        True,
+        camera_factory=lambda: camera,
+        lores_format="RGB888",
     )
     stream.start()
     with pytest.raises(ValueError, match="RGB888"):
@@ -217,7 +241,11 @@ def test_rotation_and_brightness_apply_to_both_streams() -> None:
     """Transform the processing stream and the saved original consistently."""
     camera, _ = synthetic_camera()
     stream = CameraStream(
-        (64, 48), 32, True, brightness=5, rotation=cv2.ROTATE_90_CLOCKWISE,
+        (64, 48),
+        32,
+        True,
+        brightness=5,
+        rotation=cv2.ROTATE_90_CLOCKWISE,
         camera_factory=lambda: camera,
     )
     stream.start()
@@ -283,15 +311,25 @@ def test_configuration_failure_closes_camera_and_propagates() -> None:
     assert camera.closes == 1
 
 
-@pytest.mark.parametrize("options", [
-    {"resolution": (0, 48)}, {"resolution": (64, -1)},
-    {"process_width": -1}, {"process_width": True},
-    {"frame_rate": 0}, {"frame_rate": -1}, {"frame_rate": float("nan")},
-    {"frame_rate": float("inf")}, {"rotation": 3}, {"brightness": float("nan")},
-    {"lores_format": "BGR888"},
-])
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"resolution": (0, 48)},
+        {"resolution": (64, -1)},
+        {"process_width": -1},
+        {"process_width": True},
+        {"frame_rate": 0},
+        {"frame_rate": -1},
+        {"frame_rate": float("nan")},
+        {"frame_rate": float("inf")},
+        {"rotation": 3},
+        {"brightness": float("nan")},
+        {"lores_format": "BGR888"},
+    ],
+)
 def test_invalid_settings_do_not_open_camera(options: dict[str, Any]) -> None:
     """Reject invalid controls before touching hardware."""
+
     def forbid() -> None:
         """A validation error must happen before camera construction."""
         pytest.fail("Camera should not be opened")

@@ -41,7 +41,8 @@ class EnrollmentReport:
 def image_paths(dataset: Path) -> Iterable[Path]:
     """Yield supported images deterministically beneath the dataset directory."""
     return sorted(
-        path for path in dataset.rglob("*")
+        path
+        for path in dataset.rglob("*")
         if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
     )
 
@@ -65,8 +66,11 @@ def write_gallery_atomic(output: Path, gallery: dict[str, list[Any]]) -> None:
     temporary: str | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="wb", prefix=".encodings-", suffix=".tmp",
-            dir=output.parent, delete=False,
+            mode="wb",
+            prefix=".encodings-",
+            suffix=".tmp",
+            dir=output.parent,
+            delete=False,
         ) as handle:
             temporary = handle.name
             pickle.dump(gallery, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -149,7 +153,9 @@ def encode_dataset(
 
     report("[INFO] " + statistics.summary())
     if not encodings:
-        report("[ERROR] No unambiguous valid faces enrolled; existing gallery unchanged.")
+        report(
+            "[ERROR] No unambiguous valid faces enrolled; existing gallery unchanged."
+        )
         return statistics
     write_gallery_atomic(output, {"encodings": encodings, "names": names})
     statistics.output_written = True

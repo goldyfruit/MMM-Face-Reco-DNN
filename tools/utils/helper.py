@@ -12,8 +12,8 @@ class Helper:
         if isinstance(value, bool):
             return value
         lowered = value.lower()
-        if lowered in ('yes', 'true', 't', 'y', '1'):
+        if lowered in ("yes", "true", "t", "y", "1"):
             return True
-        if lowered in ('no', 'false', 'f', 'n', '0'):
+        if lowered in ("no", "false", "f", "n", "0"):
             return False
-        raise argparse.ArgumentTypeError('Boolean value expected.')
+        raise argparse.ArgumentTypeError("Boolean value expected.")

@@ -8,7 +8,9 @@ import pytest
 from tools.utils.image import Image
 
 
-def test_neutral_adjustment_avoids_copy_and_preserves_pixels(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_neutral_adjustment_avoids_copy_and_preserves_pixels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A neutral camera configuration needs no full-resolution addWeighted."""
     image = np.arange(48, dtype=np.uint8).reshape(4, 4, 3)
 

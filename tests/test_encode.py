@@ -41,12 +41,16 @@ class FakeFaces:
         self.invalid = invalid or set()
         self.encoding_calls: list[str] = []
 
-    def face_locations(self, image: str, *, model: str) -> list[tuple[int, int, int, int]]:
+    def face_locations(
+        self, image: str, *, model: str
+    ) -> list[tuple[int, int, int, int]]:
         """Produce boxes for the selected detection model."""
         assert model in {"hog", "cnn"}
         return [(1, 10, 10, 1)] * self.counts.get(image, 1)
 
-    def face_encodings(self, image: str, boxes: list[tuple[int, int, int, int]]) -> list[list[float]]:
+    def face_encodings(
+        self, image: str, boxes: list[tuple[int, int, int, int]]
+    ) -> list[list[float]]:
         """Produce invalid or finite synthetic descriptor vectors."""
         self.encoding_calls.append(image)
         return [[float("nan")] * 128] if image in self.invalid else [[0.25] * 128]
@@ -67,7 +71,9 @@ def test_one_face_per_image_preserves_gallery_format(tmp_path: Path) -> None:
         image(dataset, relative)
     faces = FakeFaces({"group.jpg": 2})
     output = tmp_path / "model/encodings.pickle"
-    result = encode_dataset(dataset, output, cv_module=FakeCV(), face_module=faces, report=lambda _: None)
+    result = encode_dataset(
+        dataset, output, cv_module=FakeCV(), face_module=faces, report=lambda _: None
+    )
     assert result.enrolled_images == 2
     assert result.multiple_face_images == 1
     assert "group.jpg" not in faces.encoding_calls
@@ -81,17 +87,32 @@ def test_one_face_per_image_preserves_gallery_format(tmp_path: Path) -> None:
 def test_rejected_images_do_not_erase_existing_gallery(tmp_path: Path) -> None:
     """Unusable input leaves the last valid serialized model unchanged."""
     dataset = tmp_path / "dataset"
-    for relative in ("person/broken.jpg", "person/empty.jpg", "person/group.jpg", "person/invalid.jpg", "unlabelled.jpg"):
+    for relative in (
+        "person/broken.jpg",
+        "person/empty.jpg",
+        "person/group.jpg",
+        "person/invalid.jpg",
+        "unlabelled.jpg",
+    ):
         image(dataset, relative)
     output = tmp_path / "encodings.pickle"
     original = b"previous valid gallery stands in for private existing data"
     output.write_bytes(original)
     faces = FakeFaces({"empty.jpg": 0, "group.jpg": 2}, invalid={"invalid.jpg"})
     result = encode_dataset(
-        dataset, output, cv_module=FakeCV({"broken.jpg"}), face_module=faces, report=lambda _: None,
+        dataset,
+        output,
+        cv_module=FakeCV({"broken.jpg"}),
+        face_module=faces,
+        report=lambda _: None,
     )
     assert not result.output_written
-    assert result.unreadable_images == result.no_face_images == result.multiple_face_images == 1
+    assert (
+        result.unreadable_images
+        == result.no_face_images
+        == result.multiple_face_images
+        == 1
+    )
     assert result.invalid_encoding_images == result.unlabelled_images == 1
     assert output.read_bytes() == original
 
@@ -101,12 +122,21 @@ def test_nested_photographs_keep_top_level_identity(tmp_path: Path) -> None:
     dataset = tmp_path / "dataset"
     image(dataset, "person-a/daylight/portrait.jpg")
     output = tmp_path / "encodings.pickle"
-    encode_dataset(dataset, output, cv_module=FakeCV(), face_module=FakeFaces({}), report=lambda _: None)
+    encode_dataset(
+        dataset,
+        output,
+        cv_module=FakeCV(),
+        face_module=FakeFaces({}),
+        report=lambda _: None,
+    )
     with output.open("rb") as handle:
         assert pickle.load(handle)["names"] == ["person-a"]
 
 
-@pytest.mark.parametrize("encoding", [[], [0.0] * 127, [float("nan")] * 128, [float("inf")] * 128, [[0.0]] * 128, None])
+@pytest.mark.parametrize(
+    "encoding",
+    [[], [0.0] * 127, [float("nan")] * 128, [float("inf")] * 128, [[0.0]] * 128, None],
+)
 def test_invalid_descriptors_are_rejected(encoding: object) -> None:
     """Reject malformed numeric input instead of saving a broken gallery."""
     assert not valid_encoding(encoding)
@@ -117,12 +147,20 @@ def test_zero_valid_images_create_no_output(tmp_path: Path) -> None:
     dataset = tmp_path / "dataset"
     dataset.mkdir()
     output = tmp_path / "encodings.pickle"
-    result = encode_dataset(dataset, output, cv_module=FakeCV(), face_module=FakeFaces({}), report=lambda _: None)
+    result = encode_dataset(
+        dataset,
+        output,
+        cv_module=FakeCV(),
+        face_module=FakeFaces({}),
+        report=lambda _: None,
+    )
     assert not result.output_written and result.total_images == 0
     assert not output.exists()
 
 
-def test_atomic_serialization_failure_keeps_old_gallery(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_atomic_serialization_failure_keeps_old_gallery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A failing serialization cannot truncate the existing face model."""
     output = tmp_path / "encodings.pickle"
     output.write_bytes(b"last good model")
@@ -133,12 +171,16 @@ def test_atomic_serialization_failure_keeps_old_gallery(tmp_path: Path, monkeypa
 
     monkeypatch.setattr("tools.utils.enrollment.pickle.dump", fail)
     with pytest.raises(OSError, match="simulated"):
-        write_gallery_atomic(output, {"encodings": [[0.0] * 128], "names": ["person-a"]})
+        write_gallery_atomic(
+            output, {"encodings": [[0.0] * 128], "names": ["person-a"]}
+        )
     assert output.read_bytes() == b"last good model"
     assert list(tmp_path.glob(".encodings-*.tmp")) == []
 
 
-def test_atomic_replace_failure_keeps_old_gallery(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_atomic_replace_failure_keeps_old_gallery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A failing final rename leaves the old model and cleans up the temporary."""
     output = tmp_path / "encodings.pickle"
     output.write_bytes(b"last good model")
@@ -149,7 +191,9 @@ def test_atomic_replace_failure_keeps_old_gallery(tmp_path: Path, monkeypatch: p
 
     monkeypatch.setattr("tools.utils.enrollment.os.replace", fail)
     with pytest.raises(OSError, match="replace"):
-        write_gallery_atomic(output, {"encodings": [[0.0] * 128], "names": ["person-a"]})
+        write_gallery_atomic(
+            output, {"encodings": [[0.0] * 128], "names": ["person-a"]}
+        )
     assert output.read_bytes() == b"last good model"
     assert list(tmp_path.glob(".encodings-*.tmp")) == []
 
@@ -175,7 +219,9 @@ def test_failed_color_conversion_is_reported_as_unreadable(tmp_path: Path) -> No
     cv.cvtColor = fail
     output = tmp_path / "encodings.pickle"
     output.write_bytes(b"last good model")
-    result = encode_dataset(dataset, output, cv_module=cv, face_module=FakeFaces({}), report=lambda _: None)
+    result = encode_dataset(
+        dataset, output, cv_module=cv, face_module=FakeFaces({}), report=lambda _: None
+    )
     assert result.unreadable_images == 1 and not result.output_written
     assert output.read_bytes() == b"last good model"
 
@@ -183,13 +229,19 @@ def test_failed_color_conversion_is_reported_as_unreadable(tmp_path: Path) -> No
 @pytest.fixture
 def cli_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     """Load the CLI without parsing arguments or requiring shared legacy imports."""
-    values = {"dataset": "dataset", "encodings": "model.pickle", "detection_method": "hog"}
+    values = {
+        "dataset": "dataset",
+        "encodings": "model.pickle",
+        "detection_method": "hog",
+    }
     calls: list[str] = []
     arguments = SimpleNamespace(
         prepareEncodingArguments=lambda: calls.append("parse"),
         get=lambda name: values[name],
     )
-    monkeypatch.setitem(sys.modules, "tools.utils.arguments", SimpleNamespace(Arguments=arguments))
+    monkeypatch.setitem(
+        sys.modules, "tools.utils.arguments", SimpleNamespace(Arguments=arguments)
+    )
     path = Path(__file__).resolve().parents[1] / "tools/encode.py"
     spec = importlib.util.spec_from_file_location("tools.encode_test_cli", path)
     assert spec is not None and spec.loader is not None
@@ -201,12 +253,20 @@ def cli_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
 
 @pytest.mark.parametrize("saved, expected", [(True, 0), (False, 1)])
 def test_cli_reports_empty_or_successful_enrollment(
-    cli_module: ModuleType, monkeypatch: pytest.MonkeyPatch, saved: bool, expected: int,
+    cli_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    saved: bool,
+    expected: int,
 ) -> None:
     """The command exits unsuccessfully when no new gallery was written."""
+
     def enroll(**kwargs: object) -> object:
         """Validate the existing CLI fields reach the safe enrollment builder."""
-        assert kwargs == {"dataset": "dataset", "output": "model.pickle", "detection_method": "hog"}
+        assert kwargs == {
+            "dataset": "dataset",
+            "output": "model.pickle",
+            "detection_method": "hog",
+        }
         return SimpleNamespace(output_written=saved)
 
     monkeypatch.setattr(cli_module, "encode_dataset", enroll)
@@ -214,9 +274,12 @@ def test_cli_reports_empty_or_successful_enrollment(
 
 
 def test_cli_reports_output_failure_without_traceback(
-    cli_module: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    cli_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Expected filesystem errors produce an actionable nonzero CLI result."""
+
     def fail(**kwargs: object) -> object:
         """Simulate a permission error while preserving the old model."""
         raise OSError("read-only output directory")

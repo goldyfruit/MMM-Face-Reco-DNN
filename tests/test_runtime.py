@@ -106,40 +106,79 @@ class FakeEvent:
 def worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     """Build a fully isolated worker with a synthetic, compatible gallery."""
     gallery = tmp_path / "gallery.pickle"
-    gallery.write_bytes(pickle.dumps({"encodings": [np.zeros(128)], "names": ["subject"]}))
+    gallery.write_bytes(
+        pickle.dumps({"encodings": [np.zeros(128)], "names": ["subject"]})
+    )
     monkeypatch.setattr(Arguments, "args", None)
-    Arguments.prepareRecognitionArguments([
-        "--encodings", str(gallery), "--dataset", str(tmp_path / "dataset"),
-        "--interval", "1000", "--output", "0", "--outputmm", "0",
-    ])
+    Arguments.prepareRecognitionArguments(
+        [
+            "--encodings",
+            str(gallery),
+            "--dataset",
+            str(tmp_path / "dataset"),
+            "--interval",
+            "1000",
+            "--output",
+            "0",
+            "--outputmm",
+            "0",
+        ]
+    )
     settings = dict(Arguments.args)
     camera = FakeCamera()
     factory = Mock(return_value=camera)
     monkeypatch.setattr(recognition, "CameraStream", factory)
     detector_factory = Mock(return_value=object())
     monkeypatch.setattr(recognition, "FaceDetector", detector_factory)
-    engine = SimpleNamespace(recognize=Mock(return_value=recognition.FrameResult(
-        [Detection((1, 10, 10, 1))], [RecognitionMatch("subject", .1, True)])))
+    engine = SimpleNamespace(
+        recognize=Mock(
+            return_value=recognition.FrameResult(
+                [Detection((1, 10, 10, 1))], [RecognitionMatch("subject", 0.1, True)]
+            )
+        )
+    )
     engine_factory = Mock(return_value=engine)
     monkeypatch.setattr(recognition, "RecognitionEngine", engine_factory)
     signals: dict[int, Callable] = {}
-    monkeypatch.setattr(recognition, "signal", SimpleNamespace(
-        SIGINT=2, SIGTERM=15, signal=lambda number, callback: signals.__setitem__(number, callback)))
+    monkeypatch.setattr(
+        recognition,
+        "signal",
+        SimpleNamespace(
+            SIGINT=2,
+            SIGTERM=15,
+            signal=lambda number, callback: signals.__setitem__(number, callback),
+        ),
+    )
     events: list[tuple[str, Any]] = []
-    monkeypatch.setattr(recognition, "Print", SimpleNamespace(
-        printJson=lambda kind, value: events.append((kind, value))))
+    monkeypatch.setattr(
+        recognition,
+        "Print",
+        SimpleNamespace(printJson=lambda kind, value: events.append((kind, value))),
+    )
     closed, active = FakeEvent(), FakeEvent()
     created_events = iter((closed, active))
     thread_factory = Mock()
-    monkeypatch.setattr(recognition, "threading", SimpleNamespace(
-        Event=lambda: next(created_events), Thread=thread_factory))
+    monkeypatch.setattr(
+        recognition,
+        "threading",
+        SimpleNamespace(Event=lambda: next(created_events), Thread=thread_factory),
+    )
     # Stable time also verifies the interval pacing rather than testing sleeps.
     monkeypatch.setattr(recognition.time, "monotonic", lambda: 12.0)
-    return SimpleNamespace(settings=settings, camera=camera, factory=factory,
-                           detector_factory=detector_factory, engine=engine,
-                           engine_factory=engine_factory, signals=signals,
-                           events=events, closed=closed, active=active,
-                           thread_factory=thread_factory, gallery=gallery)
+    return SimpleNamespace(
+        settings=settings,
+        camera=camera,
+        factory=factory,
+        detector_factory=detector_factory,
+        engine=engine,
+        engine_factory=engine_factory,
+        signals=signals,
+        events=events,
+        closed=closed,
+        active=active,
+        thread_factory=thread_factory,
+        gallery=gallery,
+    )
 
 
 def test_sigterm_releases_request_and_camera(worker: SimpleNamespace) -> None:
@@ -183,16 +222,19 @@ def test_pause_resume_logs_out_then_restarts_camera(worker: SimpleNamespace) -> 
     assert recognition.run(worker.settings) == 0
     assert worker.camera.starts == 2 and worker.camera.stops == 1
     assert worker.camera.releases == 2 and worker.camera.closes == 1
-    assert worker.closed.waits[:2] == [1.0, .05]
+    assert worker.closed.waits[:2] == [1.0, 0.05]
     messages = [item for item in worker.events if item[0] in {"login", "logout"}]
-    assert messages == [("login", {"names": ["subject"]}),
-                        ("logout", {"names": ["subject"]}),
-                        ("login", {"names": ["subject"]})]
+    assert messages == [
+        ("login", {"names": ["subject"]}),
+        ("logout", {"names": ["subject"]}),
+        ("login", {"names": ["subject"]}),
+    ]
     worker.thread_factory.return_value.start.assert_called_once()
 
 
 def test_parent_eof_closes_constructed_camera_without_starting(
-    worker: SimpleNamespace, monkeypatch: pytest.MonkeyPatch,
+    worker: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An already-closed parent cannot leave a device running on startup."""
     worker.settings["run_only_on_notification"] = 1
@@ -208,10 +250,14 @@ def test_parent_eof_closes_constructed_camera_without_starting(
     assert not worker.camera.requests
 
 
-def test_notification_thread_start_failure_closes_constructed_camera(worker: SimpleNamespace) -> None:
+def test_notification_thread_start_failure_closes_constructed_camera(
+    worker: SimpleNamespace,
+) -> None:
     """A failed command listener cannot strand an already configured camera."""
     worker.settings["run_only_on_notification"] = 1
-    worker.thread_factory.return_value.start.side_effect = RuntimeError("listener start failed")
+    worker.thread_factory.return_value.start.side_effect = RuntimeError(
+        "listener start failed"
+    )
     with pytest.raises(RuntimeError, match="listener start failed"):
         recognition.run(worker.settings)
     assert worker.camera.closes == 1
@@ -220,7 +266,9 @@ def test_notification_thread_start_failure_closes_constructed_camera(worker: Sim
 
 @pytest.mark.parametrize("stage", ["start", "capture", "recognize", "enrollment"])
 def test_failures_always_close_the_camera(
-    worker: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, stage: str,
+    worker: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
 ) -> None:
     """Cover failures both before and after a camera request is acquired."""
     error = RuntimeError("injected " + stage + " failure")
@@ -240,20 +288,26 @@ def test_failures_always_close_the_camera(
 
 
 def test_preview_encoding_failure_releases_camera_buffer(
-    worker: SimpleNamespace, monkeypatch: pytest.MonkeyPatch,
+    worker: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A JPEG failure cannot retain an ISP request or send a broken preview."""
     worker.settings["outputmm"] = 1
     monkeypatch.setattr(recognition, "annotate", Mock(return_value=np.zeros((2, 3, 3))))
-    monkeypatch.setattr(recognition, "cv2", SimpleNamespace(
-        IMWRITE_JPEG_QUALITY=1, imencode=lambda *args: (False, None)))
+    monkeypatch.setattr(
+        recognition,
+        "cv2",
+        SimpleNamespace(IMWRITE_JPEG_QUALITY=1, imencode=lambda *args: (False, None)),
+    )
     with pytest.raises(RuntimeError, match="encode camera preview"):
         recognition.run(worker.settings)
     assert worker.camera.releases == 1 and worker.camera.closes == 1
     assert not any(kind == "camera_image" for kind, _ in worker.events)
 
 
-def test_disappearing_face_logs_out_and_keeps_preview_protocol(worker: SimpleNamespace) -> None:
+def test_disappearing_face_logs_out_and_keeps_preview_protocol(
+    worker: SimpleNamespace,
+) -> None:
     """Face disappearance clears identity while JPEG preview continues."""
     worker.settings["outputmm"] = 1
     present = worker.engine.recognize.return_value
@@ -269,35 +323,52 @@ def test_disappearing_face_logs_out_and_keeps_preview_protocol(worker: SimpleNam
 
     worker.engine.recognize.side_effect = recognize
     assert recognition.run(worker.settings) == 0
-    assert [(kind, value) for kind, value in worker.events if kind in {"login", "logout"}] == [
-        ("login", {"names": ["subject"]}), ("logout", {"names": ["subject"]}),
+    assert [
+        (kind, value) for kind, value in worker.events if kind in {"login", "logout"}
+    ] == [
+        ("login", {"names": ["subject"]}),
+        ("logout", {"names": ["subject"]}),
     ]
     images = [value["image"] for kind, value in worker.events if kind == "camera_image"]
     assert len(images) == 2
     for encoded in images:
         data = np.frombuffer(base64.b64decode(encoded), dtype=np.uint8)
-        assert recognition.cv2.imdecode(data, recognition.cv2.IMREAD_COLOR).shape == (12, 16, 3)
+        assert recognition.cv2.imdecode(data, recognition.cv2.IMREAD_COLOR).shape == (
+            12,
+            16,
+            3,
+        )
     assert worker.camera.releases == 2 and worker.camera.closes == 1
 
 
 def test_local_preview_quit_destroys_windows_and_closes_camera(
-    worker: SimpleNamespace, monkeypatch: pytest.MonkeyPatch,
+    worker: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A user-requested window quit follows the same camera cleanup path."""
     worker.settings["output"] = 1
     preview = np.zeros((2, 3, 3), dtype=np.uint8)
     monkeypatch.setattr(recognition, "annotate", Mock(return_value=preview))
     show, destroy = Mock(), Mock()
-    monkeypatch.setattr(recognition, "cv2", SimpleNamespace(
-        imshow=show, waitKey=lambda _: ord("q"), destroyAllWindows=destroy))
+    monkeypatch.setattr(
+        recognition,
+        "cv2",
+        SimpleNamespace(
+            imshow=show, waitKey=lambda _: ord("q"), destroyAllWindows=destroy
+        ),
+    )
     assert recognition.run(worker.settings) == 0
     show.assert_called_once_with("Frame", preview)
     destroy.assert_called_once()
     assert worker.camera.releases == 1 and worker.camera.closes == 1
 
 
-@pytest.mark.parametrize("problem", ["missing", "invalid_pickle", "invalid_gallery", "invalid_resolution"])
-def test_invalid_input_fails_before_camera_creation(worker: SimpleNamespace, problem: str) -> None:
+@pytest.mark.parametrize(
+    "problem", ["missing", "invalid_pickle", "invalid_gallery", "invalid_resolution"]
+)
+def test_invalid_input_fails_before_camera_creation(
+    worker: SimpleNamespace, problem: str
+) -> None:
     """Malformed configuration or enrollment cannot take camera ownership."""
     if problem == "missing":
         worker.gallery.unlink()
@@ -306,7 +377,9 @@ def test_invalid_input_fails_before_camera_creation(worker: SimpleNamespace, pro
         worker.gallery.write_bytes(b"not a pickle")
         expected = pickle.UnpicklingError
     elif problem == "invalid_gallery":
-        worker.gallery.write_bytes(pickle.dumps({"encodings": [[0] * 127], "names": ["subject"]}))
+        worker.gallery.write_bytes(
+            pickle.dumps({"encodings": [[0] * 127], "names": ["subject"]})
+        )
         expected = ValueError
     else:
         worker.settings["resolution"] = "1920"
@@ -316,7 +389,9 @@ def test_invalid_input_fails_before_camera_creation(worker: SimpleNamespace, pro
     worker.factory.assert_not_called()
 
 
-def test_main_parses_explicit_arguments_before_running(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_parses_explicit_arguments_before_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Preserve the CLI entry point without importing a camera at module load."""
     settings = {"example": "synthetic"}
     parse = Mock(side_effect=lambda argv: setattr(Arguments, "args", settings))

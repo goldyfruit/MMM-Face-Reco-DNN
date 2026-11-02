@@ -67,8 +67,10 @@ def _sycc420_to_bgr(yuv: np.ndarray, size: tuple[int, int]) -> np.ndarray:
     y_size = height * stride
     chroma_size = height // 2 * (stride // 2)
     luminance = yuv[:height, :width]
-    cb = flat[y_size:y_size + chroma_size].reshape(height // 2, stride // 2)[:, :width // 2]
-    cr = flat[y_size + chroma_size:].reshape(height // 2, stride // 2)[:, :width // 2]
+    cb = flat[y_size : y_size + chroma_size].reshape(height // 2, stride // 2)[
+        :, : width // 2
+    ]
+    cr = flat[y_size + chroma_size :].reshape(height // 2, stride // 2)[:, : width // 2]
     cb = cv2.resize(cb, size, interpolation=cv2.INTER_LINEAR)
     cr = cv2.resize(cr, size, interpolation=cv2.INTER_LINEAR)
     return cv2.cvtColor(cv2.merge((luminance, cr, cb)), cv2.COLOR_YCrCb2BGR)
@@ -95,7 +97,9 @@ class CameraFrame:
     def full_frame(self) -> np.ndarray:
         """Return an independent, unannotated full-resolution BGR image."""
         if self._released:
-            raise RuntimeError("Full-resolution frames require an active capture context")
+            raise RuntimeError(
+                "Full-resolution frames require an active capture context"
+            )
         if self._cached_main is None:
             image = self._request.make_array("main")
             if image.ndim != 3 or image.shape[2] != 4 or image.dtype != np.uint8:
@@ -137,13 +141,16 @@ class CameraStream:
         lores_format: str = "YUV420",
     ) -> None:
         """Validate stream options and configure a camera without starting it."""
-        if (
-            len(resolution) != 2
-            or any(isinstance(value, bool) or not isinstance(value, int) or value <= 0
-                   for value in resolution)
+        if len(resolution) != 2 or any(
+            isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            for value in resolution
         ):
             raise ValueError("Camera resolution must contain two positive integers")
-        if isinstance(process_width, bool) or not isinstance(process_width, int) or process_width < 0:
+        if (
+            isinstance(process_width, bool)
+            or not isinstance(process_width, int)
+            or process_width < 0
+        ):
             raise ValueError("process_width must be a non-negative integer")
         if frame_rate is not None and (
             isinstance(frame_rate, bool)
@@ -159,7 +166,9 @@ class CameraStream:
             raise ValueError("lores_format must be YUV420 or RGB888")
         self.resolution = tuple(resolution)
         self.process_width = process_width
-        self.lores_size = aligned_lores_size(self.resolution, process_width) if enable_lores else None
+        self.lores_size = (
+            aligned_lores_size(self.resolution, process_width) if enable_lores else None
+        )
         self.frame_rate = frame_rate
         self.brightness = float(brightness)
         self.contrast = float(contrast)
@@ -179,7 +188,10 @@ class CameraStream:
                 "queue": False,
             }
             if self.lores_size is not None:
-                arguments["lores"] = {"size": self.lores_size, "format": self.lores_format}
+                arguments["lores"] = {
+                    "size": self.lores_size,
+                    "format": self.lores_format,
+                }
             if frame_rate is not None:
                 arguments["controls"] = {"FrameRate": float(frame_rate)}
             config = self._camera.create_preview_configuration(**arguments)
@@ -187,7 +199,9 @@ class CameraStream:
             if self.lores_size is not None:
                 lores_config = self._camera.stream_configuration("lores")
                 if lores_config["format"] != self.lores_format:
-                    raise ValueError("Camera changed the requested low-resolution pixel format")
+                    raise ValueError(
+                        "Camera changed the requested low-resolution pixel format"
+                    )
                 self.lores_size = tuple(lores_config["size"])
         except Exception:
             self._camera.close()
@@ -226,8 +240,11 @@ class CameraStream:
         frame: CameraFrame | None = None
         try:
             frame = CameraFrame(
-                np.empty((0, 0, 3), dtype=np.uint8), request,
-                self.brightness, self.contrast, self.rotation,
+                np.empty((0, 0, 3), dtype=np.uint8),
+                request,
+                self.brightness,
+                self.contrast,
+                self.rotation,
             )
             if self.lores_size is not None:
                 width, height = self.lores_size
@@ -240,7 +257,9 @@ class CameraStream:
                         or lowres.shape[0] != height
                         or lowres.shape[1] < width
                     ):
-                        raise ValueError("Expected an 8-bit RGB888 low-resolution frame")
+                        raise ValueError(
+                            "Expected an 8-bit RGB888 low-resolution frame"
+                        )
                     # Libcamera's RGB888 stores B,G,R bytes (not R,G,B).
                     bgr = lowres[:, :width]
                 else:

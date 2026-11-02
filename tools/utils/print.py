@@ -16,5 +16,5 @@ class Print:
         """Write one complete, finite JSON event and flush immediately."""
         encoded = json.dumps({event_type: message}, allow_nan=False)
         with Print._lock:
-            sys.stdout.write(encoded + '\n')
+            sys.stdout.write(encoded + "\n")
             sys.stdout.flush()
