@@ -17,6 +17,7 @@ The existing `face-recognition-models` package depends on legacy `pkg_resources`
 | detectionUpsample | 1 | Preserve legacy HOG/CNN behaviour;0 may miss small faces |
 | identityMargin | 0 | Optional competing-identity distance gap; calibrate before enabling |
 | previewQuality | 95 | JPEG quality for preview, independent of enrollment images |
+| opencvThreads | 0 | Leave defaults at0; explicit1–64 controls OpenCV worker threads |
 
 `CameraStream.capture()` in [camera.py](../tools/utils/camera.py) owns and releases each camera request. `CameraFrame.full_frame()` materializes a synchronized full-resolution image only when needed. [RecognitionEngine.recognize](../tools/recognition.py) retains dlib128 embeddings. [FaceMatcher.match](../tools/utils/vision.py) validates and caches the gallery. No automatic gallery regeneration occurs.
 

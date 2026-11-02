@@ -71,6 +71,12 @@ class Arguments:
         )
         parser.add_argument("--cameraFrameRate", type=float, default=None)
         parser.add_argument(
+            "--opencvThreads",
+            type=int,
+            default=0,
+            help="OpenCV worker threads (0 preserves the library default; maximum 64)",
+        )
+        parser.add_argument(
             "--detectionUpsample", type=int, choices=(0, 1, 2), default=1
         )
         parser.add_argument(
@@ -88,6 +94,8 @@ class Arguments:
         parsed = vars(parser.parse_args(argv))
         if parsed["interval"] <= 0:
             parser.error("interval must be positive")
+        if not 0 <= parsed["opencvThreads"] <= 64:
+            parser.error("opencvThreads must be between 0 and 64")
         if not 1 <= parsed["previewQuality"] <= 100:
             parser.error("previewQuality must be between 1 and 100")
         if not 0 < parsed["tolerance"] <= 2 or not 0 <= parsed["identityMargin"] <= 2:

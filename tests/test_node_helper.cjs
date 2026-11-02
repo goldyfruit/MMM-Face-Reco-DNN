@@ -49,6 +49,13 @@ test('forwards supported acceleration controls without losing Python path', () =
   assert.ok(shells[0].options.args.includes('--cameraLoresFormat=RGB888'));
   assert.ok(shells[0].options.args.includes('--cameraFrameRate=15'));
   assert.ok(shells[0].options.args.includes('--method=yunet'));
+  assert.ok(shells[0].options.args.includes('--opencvThreads=0'));
+});
+test('forwards an explicit OpenCV thread budget', () => {
+  const { helper, shells } = setup();
+  helper.config.opencvThreads = 2;
+  helper.python_start();
+  assert.ok(shells[0].options.args.includes('--opencvThreads=2'));
 });
 test('destroy is idempotent and releases the Python process with SIGTERM', () => {
   const { helper, shells } = setup();

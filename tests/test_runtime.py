@@ -402,3 +402,55 @@ def test_main_parses_explicit_arguments_before_running(
     assert recognition.main(["--interval", "500"]) == 7
     parse.assert_called_once_with(["--interval", "500"])
     run.assert_called_once_with(settings)
+
+
+@pytest.mark.parametrize("threads", [None, 0, 2])
+def test_opencv_thread_budget_preserves_default_or_applies_before_devices(
+    worker: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    threads: int | None,
+) -> None:
+    """Zero must not disable OpenCV threading; a positive budget applies early."""
+    if threads is None:
+        worker.settings.pop("opencvThreads", None)
+    else:
+        worker.settings["opencvThreads"] = threads
+    order = []
+    set_threads = Mock(side_effect=lambda value: order.append(("threads", value)))
+    monkeypatch.setattr(recognition.cv2, "setNumThreads", set_threads)
+    worker.engine_factory.side_effect = (
+        lambda *args: order.append(("engine", None)) or worker.engine
+    )
+    worker.factory.side_effect = (
+        lambda **kwargs: order.append(("camera", None)) or worker.camera
+    )
+    result = worker.engine.recognize.return_value
+
+    def recognize(_: np.ndarray) -> recognition.FrameResult:
+        worker.signals[15](15, None)
+        return result
+
+    worker.engine.recognize.side_effect = recognize
+    assert recognition.run(worker.settings) == 0
+    if threads:
+        set_threads.assert_called_once_with(2)
+        assert order == [("threads", 2), ("engine", None), ("camera", None)]
+    else:
+        set_threads.assert_not_called()
+        assert order == [("engine", None), ("camera", None)]
+
+
+@pytest.mark.parametrize("threads", ["-1", "65", "1.5"])
+def test_invalid_opencv_thread_budget_is_rejected(threads: str) -> None:
+    """Reject negative, excessive and non-integral budgets before camera access."""
+    with pytest.raises(SystemExit):
+        Arguments.prepareRecognitionArguments(["--opencvThreads", threads])
+
+
+def test_opencv_thread_budget_parser_keeps_default_and_accepts_bounds() -> None:
+    """The new option is opt-in and accepts only its documented integer range."""
+    Arguments.prepareRecognitionArguments([])
+    assert Arguments.get("opencvThreads") == 0
+    for threads in (0, 2, 64):
+        Arguments.prepareRecognitionArguments(["--opencvThreads", str(threads)])
+        assert Arguments.get("opencvThreads") == threads
