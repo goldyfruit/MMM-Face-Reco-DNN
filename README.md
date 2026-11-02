@@ -16,6 +16,7 @@ This fork preserves existing dlib128 face galleries while adding an optional lig
     cameraLores: true,
     cameraLoresFormat: 'RGB888',
     cameraFrameRate: 15,
+    opencvThreads: 2,
     checkInterval: 500,
     processWidth: 500,
     resolution: [1920, 1080]

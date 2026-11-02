@@ -42,6 +42,7 @@ module.exports = NodeHelper.create({
         '--run-only-on-notification=' + (this.config.external_trigger_notification !== '' ? '1' : '0'),
         '--cameraLores=' + (this.config.cameraLores ? 'True' : 'False'),
         '--cameraLoresFormat=' + (this.config.cameraLoresFormat || 'YUV420'),
+        '--opencvThreads=' + (this.config.opencvThreads ?? 0),
         '--detectionUpsample=' + (this.config.detectionUpsample ?? 1),
         '--yunetModel=' + (this.config.yunetModel || 'modules/MMM-Face-Reco-DNN/model/face_detection_yunet_2023mar.onnx'),
         '--yunetScoreThreshold=' + (this.config.yunetScoreThreshold ?? 0.8),

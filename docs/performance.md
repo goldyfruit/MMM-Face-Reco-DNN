@@ -27,3 +27,7 @@ Raw public benchmark: [pi5-detection.json](benchmarks/pi5-detection.json).
 Live deployment at500ms polling measured23.5% of one CPU core over30 seconds,60.9 C and no throttling. This is a scene-dependent sample, not a controlled family-accuracy comparison. Existing gallery bytes stayed unchanged; user confirmed correct recognition at normal standing distance.
 
 Final Pi5 rollout uses RGB888 lores directly, avoiding a full-/limited-range YUV mismatch. The real-camera RGB canary measured mean main/lores difference0.643 byte levels after resizing, verified full-resolution pixels and restart, and saved no images. Portable YUV420 now uses full-range Rec601 conversion with regression tests.
+
+## YuNet thread scaling
+
+On the same500x281 public scene, nine repeats after warm-up:4threads measured22.8–25.0ms median wall time and65–68ms CPU time;2threads measured22.7–25.4ms wall and41–43ms CPU. One thread measured27.6ms wall/26.8ms CPU. The Pi uses explicit `opencvThreads:2` to reduce detector CPU consumption by about36% with similar wall latency. Default0 retains library behaviour for other users. Reproduce with `python tools/benchmark.py --opencv-threads 2`.

@@ -56,6 +56,8 @@ Module.register('MMM-Face-Reco-DNN', {
     cameraLores: false,
     cameraLoresFormat: 'YUV420',
     cameraFrameRate: null,
+    // Zero keeps OpenCV's default; a positive count can reserve CPU headroom.
+    opencvThreads: 0,
     previewQuality: 95,
     // how fast in ms should the modules hide and show (face effect)
     animationSpeed: 0,

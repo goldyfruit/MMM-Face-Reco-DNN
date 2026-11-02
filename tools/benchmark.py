@@ -57,6 +57,7 @@ def benchmark(fixture: Path, model: Path, repeats: int = 7) -> dict[str, Any]:
         raise ValueError("Public test fixture could not be read")
     output: dict[str, Any] = {
         "opencv": cv2.__version__,
+        "opencv_threads": cv2.getNumThreads(),
         "repeats": repeats,
         "scope": "Detection only; one public portrait and synthetic transforms, not identity accuracy",
         "yunet_score_threshold": 0.8,
@@ -99,7 +100,12 @@ def main() -> int:
     )
     parser.add_argument("--repeats", type=int, default=7)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--opencv-threads", type=int, default=0)
     args = parser.parse_args()
+    if args.opencv_threads < 0:
+        parser.error("opencv-threads must be nonnegative")
+    if args.opencv_threads:
+        cv2.setNumThreads(args.opencv_threads)
     result = json.dumps(benchmark(args.fixture, args.model, args.repeats), indent=2)
     if args.output:
         args.output.write_text(result + "\n")

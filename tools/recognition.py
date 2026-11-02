@@ -144,6 +144,9 @@ def monitor_commands(
 
 def run(settings: dict[str, Any]) -> int:
     """Run the worker while releasing every camera request and camera handle."""
+    opencv_threads = settings.get("opencvThreads", 0)
+    if opencv_threads > 0:
+        cv2.setNumThreads(opencv_threads)
     closed, active = threading.Event(), threading.Event()
     active.set()
 
