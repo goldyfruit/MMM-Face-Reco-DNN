@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document tested fresh per-frame presence metadata and release 2.2.1 without changing authentication or cached login behavior.
+Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document armed local lost-letter stamp detection.
 
 # Evidence-based audit
 
@@ -45,3 +45,11 @@ Primary AF references: [libcamera public control definitions](https://github.com
 - [Helper `validPresence`](node_helper.js) requires six own fields, finite nonnegative observation time, worker epoch, positive safe sequence and at most eight bounded labels. Extra fields and Unicode control/format/surrogate labels are rejected. [Node/frontend tests](tests/test_node_helper.cjs) verify this separate metadata path without changing cached session semantics.
 
 Verification completed before this record: 217 Python tests on Python 3.13.11 (94% overall / 97% recognition-worker coverage), 23 Node tests, JavaScript lint and targeted Ruff lint/format pass. This metadata is observational and unauthenticated: consumers must enforce short freshness expiry, independent stability, exact private mappings and their own authorization. Clock jumps fail only in a consumer that checks age. A paused/dead worker can stop sending; the Face frontend does not synthesize camera evidence. No inference accuracy, face liveness or private hardware result is established by these synthetic tests.
+
+## Armed letter stamps
+
+`LetterScanner.scan()` checks a fresh armed rehearsal and idle Voice before
+requesting full-resolution pixels. Only the two fixed stamp values can produce
+an event. The socket test checks that the event contains only the revision,
+language and capture time. The latch test covers repeated frames and removing
+the stamp before a new take. [Marker tests](tests/test_letter_marker.py)

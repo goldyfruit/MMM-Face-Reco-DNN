@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document tested fresh per-frame presence metadata and release 2.2.1 without changing authentication or cached login behavior.
+Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document armed local lost-letter stamp detection.
 
 # Proposed follow-up work
 
@@ -32,3 +32,9 @@ Use [FaceFocusController](tools/utils/focus.py#L121) and [CameraStream.face_focu
 | A label is not an authenticated identity | Keep greeting mappings cosmetic, explicit and private; retain native Voice authorization for all actions | Prevent personalization from becoming an implicit permission grant |
 
 References: [`run` and `FrameResult`](tools/recognition.py), [helper `validPresence`](node_helper.js), [fresh-presence runtime tests](tests/test_runtime.py) and [consumer contract](docs/index.md#fresh-presence-contract).
+
+## Room calibration for letter stamps
+
+Use `LetterScanner` with a 9–11 cm printed stamp at the filming position.
+A local rehearsal can establish the best distance and angle for the existing
+lens settings. [Synthetic decoder tests](tests/test_letter_marker.py)

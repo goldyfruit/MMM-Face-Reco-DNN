@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document tested fresh per-frame presence metadata and release 2.2.1 without changing authentication or cached login behavior.
+Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document armed local lost-letter stamp detection.
 
 # Installation and configuration
 
@@ -66,3 +66,11 @@ Each settled inference publishes its current matches, including duplicate labels
 No image, face geometry, descriptor, distance, gallery, spoken text, profile selection or authorization is included. This is not liveness detection or authentication. The separate optional Christmas greeting consumer opts in and uses its own freshness, single-face stability, private exact-label mapping and cooldown checks; existing native Voice permissions remain independent. This feature adds no network listener or greeting request client to the Face module.
 
 Validation uses [synthetic worker tests](../tests/test_runtime.py) and [Node/frontend admission tests](../tests/test_node_helper.cjs): 217 Python tests on Python 3.13.11, 23 Node tests, JavaScript lint and targeted Python lint/format pass. No private camera/gallery was accessed for this feature.
+
+## Local lost-letter stamp
+
+`run()` gives `LetterScanner.scan()` a lazy frame callback while the existing
+camera request is live. The scanner requires a fresh public rehearsal state,
+an idle Voice projection and the pre-existing local socket mount. No additional
+camera handle is opened. [Recognition worker](../tools/recognition.py) ·
+[Stamp scanner](../tools/utils/letter_marker.py)

@@ -22,6 +22,7 @@ import numpy as np
 
 from tools.utils.arguments import Arguments
 from tools.utils.camera import CameraStream
+from tools.utils.letter_marker import LetterScanner
 from tools.utils.print import Print
 from tools.utils.vision import (
     Detection,
@@ -208,6 +209,7 @@ def run(settings: dict[str, Any]) -> int:
     reported_ready_generation = None
     presence_epoch = uuid.uuid4().hex
     presence_sequence = 0
+    letter_scanner = LetterScanner()
 
     def reset_ready() -> None:
         """Require a new processed-frame readiness event after a command change."""
@@ -311,6 +313,8 @@ def run(settings: dict[str, Any]) -> int:
                     Print.printJson("logout", {"names": logouts})
                 if identities_settled:
                     previous = names
+                if active.is_set() and not closed.is_set():
+                    letter_scanner.scan(captured.full_frame, observed_at, started)
             if (
                 active.is_set()
                 and frame_generation == activation_generation

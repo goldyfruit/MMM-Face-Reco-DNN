@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document tested fresh per-frame presence metadata and release 2.2.1 without changing authentication or cached login behavior.
+Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document armed local lost-letter stamp detection.
 
 # Maintenance log —2026-11-02
 
@@ -47,3 +47,18 @@ Actual verification: 217 Python tests pass under Python 3.13.11 with 94% overall
 ### Transparency Report — fresh presence
 
 AI model: Codex, GPT-6. Actions: independent review, timestamp correction, helper validation, synthetic regression tests, release metadata and documentation. Human oversight: user requested Christmas mirror activities and personalized Santa greetings; root agent coordinates deployment separately. No live camera/gallery access, private media export, commit, push or rollout was performed by this review.
+
+## 2026-11-03 — Armed letter stamp scanner
+
+Added a bounded two-language OpenCV scan within the existing camera capture
+loop. Checks cover fixed markers, stale states, transient gateway replies and
+the removal latch between takes. The full local suite passes 228 Python and
+23 Node tests. Synthetic print scans establish decoder behavior. Room lighting
+and the physical prop still require a rehearsal.
+
+### Transparency Report
+
+Codex (GPT-6) wrote `LetterScanner`, integrated the existing capture and ran
+the synthetic tests. The owner requested local camera recognition for the prop.
+The scanner receives only frame memory from the existing camera worker.
+[Worker](tools/recognition.py) · [Tests](tests/test_letter_marker.py)

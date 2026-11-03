@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document tested fresh per-frame presence metadata and release 2.2.1 without changing authentication or cached login behavior.
+Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document armed local lost-letter stamp detection.
 
 # FAQ
 
@@ -51,3 +51,10 @@ Use `FACE_RECOGNITION_PRESENCE`, emitted by [the Face frontend](MMM-Face-Reco-DN
 ## Does the presence signal authorize an action or identify a child profile?
 
 No. It contains bounded match labels only and does not create any authentication mapping. It carries no image, gallery, face coordinates or confidence values. A separate explicitly enabled consumer may use a private exact-label allowlist for a cosmetic greeting, with its own freshness, stability and cooldown checks. Voice actions still require their existing authenticated connection. The Face module does not turn observed labels into commands, speech or permissions.
+
+## How should I hold the North Pole stamp?
+
+Arm the lost-letter rehearsal, then hold the printed square still and flat
+toward the camera. Keep its white border clear. Lower the prop for a beat
+between takes so `LetterScanner.scan()` observes two empty samples.
+[Scanner implementation](tools/utils/letter_marker.py)

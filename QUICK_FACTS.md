@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document tested fresh per-frame presence metadata and release 2.2.1 without changing authentication or cached login behavior.
+Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document armed local lost-letter stamp detection.
 
 # Quick facts
 
@@ -29,3 +29,10 @@ Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document tested fresh per-frame 
 | Fresh presence | `FACE_RECOGNITION_PRESENCE`: exact6fields version/epoch/sequence/observed_at/available/labels; capture-enter timestamp, per-inference duplicate labels preserved; no authorization mapping |
 | Fresh presence sources | `tools/recognition.py:run`; `node_helper.js:validPresence`; `MMM-Face-Reco-DNN.js:socketNotificationReceived` |
 | Presence limits | ≤8 labels, ≤100 JavaScript code units each, Unicode controls rejected; unsettled/over-cap unavailable; consumers must expire missing snapshots |
+
+## Local lost-letter stamps
+
+`LetterScanner` borrows an existing `CameraFrame.full_frame()` only when the
+Hub display is armed. It sends the revision, language and time to a local
+Unix socket and keeps no frame files.
+[Worker integration](tools/recognition.py) · [Stamp gate](tools/utils/letter_marker.py)
