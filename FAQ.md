@@ -1,4 +1,4 @@
-Last Edit: Codex - 2026-11-02 - Motive: Document advertised camera controls and tested worker/session recovery.
+Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document tested fresh per-frame presence metadata and release 2.2.1 without changing authentication or cached login behavior.
 
 # FAQ
 
@@ -43,3 +43,11 @@ External pause immediately clears stale sessions and preview, and the helper dis
 ## Can an autofocus scan trigger a stranger greeting?
 
 Opt-in face AF defers new identity login/logout and dataset extension while the controller reports a pending scan or lens restoration. Detection and preview continue, and the existing identity is held only during the bounded transition. A no-face result cancels scanning and allows normal logout, so disappearance does not keep a ghost session. Timeout/failure requests restoration of a safe lens baseline and imposes a global 30-second failure cooldown, even if the ROI moves. Resume waits for a fresh frame confirming the seed. If restoration metadata is missing or wrong after two seconds while a face is present, the worker faults instead of classifying the unverified input. Tests cover known face → blurred unknown during scan → settled known face without an intervening guest greeting. This remains personalization, not authentication.
+
+## Can another module tell who is present right now without stale login sessions?
+
+Use `FACE_RECOGNITION_PRESENCE`, emitted by [the Face frontend](MMM-Face-Reco-DNN.js) from the separately validated per-inference snapshots in [the helper](node_helper.js). Do not treat `USERS_LOGIN`, cached users or delayed logout as current-frame evidence. The [fresh-presence contract](docs/index.md#fresh-presence-contract) uses a new random worker epoch, positive increasing sequence and capture-enter wall timestamp. An empty settled frame has `available:true, labels:[]`; an unsettled focus transition or more than eight matches has `available:false, labels:[]`. Two same-label matches remain two entries. A paused or failed worker may send nothing; consumers need their own short expiry.
+
+## Does the presence signal authorize an action or identify a child profile?
+
+No. It contains bounded match labels only and does not create any authentication mapping. It carries no image, gallery, face coordinates or confidence values. A separate explicitly enabled consumer may use a private exact-label allowlist for a cosmetic greeting, with its own freshness, stability and cooldown checks. Voice actions still require their existing authenticated connection. The Face module does not turn observed labels into commands, speech or permissions.

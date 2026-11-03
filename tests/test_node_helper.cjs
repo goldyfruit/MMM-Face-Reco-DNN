@@ -465,3 +465,32 @@ test('duplicate logout notifications cannot leave an uncancellable timer after t
   clock.advance(module.config.logoutDelay);
   assert.equal(module.users[0], 'subject');
 });
+
+test('fresh presence is bounded and forwarded independently from cached login state', () => {
+  const { helper, shells, notifications } = setup();
+  helper.python_start();
+  const value = { version: 1, epoch: 'a'.repeat(32), sequence: 1, observed_at: 1000, available: true, labels: ['subject'] };
+  shells[0].message({ presence: value });
+  assert.equal(notifications.at(-1).name, 'presence');
+  assert.deepEqual(JSON.parse(JSON.stringify(notifications.at(-1).payload)), value);
+  const count = notifications.length;
+  for (const patch of [
+    { sequence: true },
+    { sequence: -1 },
+    { labels: ['x'.repeat(101)] },
+    { labels: ['hidden\u202etext'] },
+    { labels: ['bad\ud800'] },
+    { available: false },
+    { image: 'private-pixels' },
+    { epoch: 'bad' },
+    { epoch: undefined },
+  ])
+    shells[0].message({ presence: { ...value, ...patch } });
+  assert.equal(notifications.length, count);
+  shells[0].message({ presence: { ...value, labels: ['subject', 'subject'] } });
+  assert.deepEqual(Array.from(notifications.at(-1).payload.labels), ['subject', 'subject']);
+  assert.equal(notifications.at(-1).payload.labels.length, 2);
+  const front = setupFrontend();
+  front.module.socketNotificationReceived('presence', value);
+  assert.equal(front.notifications.at(-1)[0], 'FACE_RECOGNITION_PRESENCE');
+});

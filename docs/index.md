@@ -1,4 +1,4 @@
-Last Edit: Codex - 2026-11-02 - Motive: Document advertised camera controls and tested worker/session recovery.
+Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document tested fresh per-frame presence metadata and release 2.2.1 without changing authentication or cached login behavior.
 
 # Installation and configuration
 
@@ -50,3 +50,19 @@ Set `cameraAutofocus:'face'` to target detected geometry instead of default mete
 [Helper recovery](../node_helper.js#L27) clears stale sessions/preview immediately through [frontend reset](../MMM-Face-Reco-DNN.js#L405), waits for old-process closure, and bounds retries. Explicit stop/pause suppresses retries and queued activity; a process that ran at least 60 seconds gets a fresh early-failure budget. Normal multi-user logout callbacks bind users independently and emit logout after expiry. This remains personalization, not authentication/liveness.
 
 Current validation: 210 Python tests pass under actual Python 3.10.22 and 3.13.11, including 80 camera/controller and 50 runtime tests; 22 Node tests and lint/format checks pass. See [camera tests](../tests/test_camera.py), [runtime tests](../tests/test_runtime.py) and [audit](../AUDIT.md). Primary AF semantics are documented in [libcamera control definitions](https://github.com/raspberrypi/libcamera/blob/main/src/libcamera/control_ids_core.yaml); [Picamera2 configuration](https://github.com/raspberrypi/picamera2/blob/main/picamera2/picamera2.py) shares the main crop with preview lores when aspect preservation is disabled.
+
+## Fresh presence contract
+
+Release 2.2.1 adds `FACE_RECOGNITION_PRESENCE` independently of legacy login/logout events. [`run`](../tools/recognition.py) sends the `presence` payload; [helper `validPresence`](../node_helper.js) validates it, and [the frontend](../MMM-Face-Reco-DNN.js) forwards the fixed metadata notification.
+
+```json
+{"version":1,"epoch":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sequence":1,"observed_at":1800000000.0,"available":true,"labels":["synthetic-subject"]}
+```
+
+The exact six fields are mandatory. `epoch` is a fresh 32-character lowercase hexadecimal worker UUID; `sequence` increases from one for each inference in that worker. `observed_at` is UNIX seconds recorded when the captured request is entered, before inference, so processing latency remains visible to the consumer. The helper accepts only finite nonnegative timestamps and positive safe integer sequences. Match labels are nonempty strings of at most 100 JavaScript code units, with Unicode control/format/surrogate characters rejected; at most eight entries leave the worker. Consumers can enforce stricter bounds.
+
+Each settled inference publishes its current matches, including duplicate labels. A two-face frame remains two entries even if both match the same label; consumers must not deduplicate this into a single-person greeting. A settled no-face frame is available with an empty list. During pending autofocus or over-cap groups, availability is false with an empty list. Pause, shutdown and failed workers can stop publishing; consumers must expire missing/old snapshots and never use cached login state as a replacement.
+
+No image, face geometry, descriptor, distance, gallery, spoken text, profile selection or authorization is included. This is not liveness detection or authentication. The separate optional Christmas greeting consumer opts in and uses its own freshness, single-face stability, private exact-label mapping and cooldown checks; existing native Voice permissions remain independent. This feature adds no network listener or greeting request client to the Face module.
+
+Validation uses [synthetic worker tests](../tests/test_runtime.py) and [Node/frontend admission tests](../tests/test_node_helper.cjs): 217 Python tests on Python 3.13.11, 23 Node tests, JavaScript lint and targeted Python lint/format pass. No private camera/gallery was accessed for this feature.

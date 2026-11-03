@@ -487,6 +487,11 @@ Module.register('MMM-Face-Reco-DNN', {
 
   socketNotificationReceived: function (notification, payload) {
     if (!payload || typeof payload !== 'object') return;
+    if (notification === 'presence') {
+      // Separate fresh-frame signal; cached login sessions retain their legacy UX.
+      this.sendNotification('FACE_RECOGNITION_PRESENCE', payload);
+      return;
+    }
     if (notification === 'worker_state') {
       this.workerAvailable = payload.available === true;
       if (!this.workerAvailable) this.reset_sessions();

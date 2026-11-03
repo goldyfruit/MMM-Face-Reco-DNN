@@ -1,4 +1,4 @@
-Last Edit: Codex - 2026-11-02 - Motive: Document advertised camera controls and tested worker/session recovery.
+Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document tested fresh per-frame presence metadata and release 2.2.1 without changing authentication or cached login behavior.
 
 # Maintenance log —2026-11-02
 
@@ -28,8 +28,22 @@ The opt-in [FaceFocusController](tools/utils/focus.py#L121) maps detected faces 
 
 Worker failures immediately reset sessions/preview and use bounded close-before-restart recovery. Explicit pause/stop suppresses retries and rejects queued old events. Activation generations renew readiness and restore the same known face after quick pause/resume; stale in-flight results cannot train or reopen a session. The actual PythonShell formatter/send path is tested. Frontend delayed logout now handles multiple users and duplicate notifications correctly. Normal failure/session logs avoid private labels.
 
-Validation: 210 Python tests pass under actual Python 3.10.22 and 3.13.11, including 80 camera/controller and 50 runtime tests. All 22 Node tests, JavaScript lint, targeted Ruff and Python formatting checks pass. Tests use synthetic arrays/identities, public fixtures, fake clocks and mocked controls; physical face-window focus validation remains separate. [Audit/source references](AUDIT.md), [camera tests](tests/test_camera.py) and [runtime tests](tests/test_runtime.py) record the scope.
+Validation: 210 Python tests pass under actual Python 3.10.22 and 3.13.11, including 80 camera/controller and 50 runtime tests. All 22 Node tests, JavaScript lint, targeted Ruff and Python formatting checks pass. Tests use synthetic arrays/identities, public fixtures, fake clocks and mocked controls; physical face-window focus validation is recorded below. [Audit/source references](AUDIT.md), [camera tests](tests/test_camera.py) and [runtime tests](tests/test_runtime.py) record the scope.
 
 ### Transparency Report
 
 AI model: Codex, GPT-6 family; exact runtime identifier unavailable. Actions: source/control inspection, face-window geometry and bounded recovery implementation, stale-session/timer fixes, unit/integration testing and documentation. Camera and runtime work used separate implementation agents with an independent lifecycle/geometry review. Human oversight: the user requested continued improvement and camera/config review; the user participated in the authorized physical comparison and confirmed recognition with automatic face-targeted focus. No private face images/embeddings were uploaded or added to Git by this source work.
+
+Native validation on 2026-11-02 passed with the user present: all 30 frames contained a face; all 25 settled frames were accepted. The face-window run recorded three scanning and 25 focused frames, 24 locked-ROI samples, and positive PDAF confidence in 267 samples without format errors. Median matching distance was 0.4255 versus 0.539 in the preceding manual-focus run. This is a sequential same-room comparison, not a population accuracy result. Production now uses face-window AF seeded at 1.0 dioptre; the gallery and identity thresholds are unchanged. The correction targets AF metering/ROI behavior; it does not establish a lens-motor defect. Aggregate evidence: workspace `outputs/mm01-face-af-validated-20261102.json`; no private images or identity names are included here.
+
+## 2.2.1 fresh-presence review — 2026-11-03
+
+Added a separate exact-six-field current-frame metadata path in [`run`](tools/recognition.py), the [Node helper](node_helper.js) and [frontend notification adapter](MMM-Face-Reco-DNN.js). It exports raw match-label multiplicity rather than deduplicated login names, preventing a same-label group from appearing to be one person. Pending autofocus and over-cap groups produce unavailable empty snapshots. Legacy login/logout timing and gallery matching remain unchanged; no additional captures are started.
+
+Independent review found that timestamping after inference could make a slow result appear fresh. The timestamp is now taken immediately after entering the captured request and before inference. A synthetic ten-second inference regression test verifies that the original observation time survives. Helper admission requires all six own fields, bounded strings, safe positive sequence and finite timestamp; Unicode control/format/surrogate labels and extra fields are rejected. The downstream optional Unix-socket consumer was reviewed separately; this source adds no socket listener, authentication mapping or spoken text.
+
+Actual verification: 217 Python tests pass under Python 3.13.11 with 94% overall coverage and 97% recognition-worker coverage; all 23 Node tests and JavaScript lint pass. Targeted Ruff lint and formatting pass for `tools/recognition.py` and `tests/test_runtime.py`. [Runtime tests](tests/test_runtime.py) cover empty/multiple/duplicate/over-cap faces, autofocus unavailability and processing-delay timestamps; [Node tests](tests/test_node_helper.cjs) cover bounded admission, multiplicity and independent frontend forwarding. Package and lockfile now agree on 2.2.1. No new physical camera/gallery test or recognition accuracy/FPS gain is claimed. Earlier hardware evidence above is preserved as historical validation.
+
+### Transparency Report — fresh presence
+
+AI model: Codex, GPT-6. Actions: independent review, timestamp correction, helper validation, synthetic regression tests, release metadata and documentation. Human oversight: user requested Christmas mirror activities and personalized Santa greetings; root agent coordinates deployment separately. No live camera/gallery access, private media export, commit, push or rollout was performed by this review.

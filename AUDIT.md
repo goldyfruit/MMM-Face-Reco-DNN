@@ -1,4 +1,4 @@
-Last Edit: Codex - 2026-11-02 - Motive: Document advertised camera controls and tested worker/session recovery.
+Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document tested fresh per-frame presence metadata and release 2.2.1 without changing authentication or cached login behavior.
 
 # Evidence-based audit
 
@@ -37,3 +37,11 @@ Follow-up YuNet-specific scaling benchmark:4threads used65–68ms CPU at22.8–2
 Current validation: 210 Python tests pass under actual Python 3.10.22 and 3.13.11, including 80 camera/controller and 50 runtime tests; 22 Node tests, JavaScript lint, targeted Ruff and Python formatting pass. See [camera tests](tests/test_camera.py), [runtime tests](tests/test_runtime.py) and [Node/frontend tests](tests/test_node_helper.cjs). The source tests use synthetic data and clocks; physical face-window AF validation is pending and no new recognition accuracy/FPS gain is claimed. Pre-existing unrelated Ruff findings in the legacy picture utility/test import remain outside this change.
 
 Primary AF references: [libcamera public control definitions](https://github.com/raspberrypi/libcamera/blob/main/src/libcamera/control_ids_core.yaml) define sensor-pixel AF windows, Windows metering and explicit Auto-mode triggers. [Picamera2 configuration](https://github.com/raspberrypi/picamera2/blob/main/picamera2/picamera2.py) shares the main crop with preview lores when aspect preservation is disabled. [Pi 5 per-stream crop discussion](https://lists.libcamera.org/pipermail/libcamera-devel/2024-October/045497.html) distinguishes stream-zero ScalerCrop from per-stream ScalerCrops. The adapter uses actual current-request geometry.
+
+## 2.2.1 current-frame presence review — 2026-11-03
+
+- Fixed post-inference timestamp freshness: [`run`](tools/recognition.py) records observation time before recognition; `test_presence_timestamp_precedes_slow_inference` in [runtime tests](tests/test_runtime.py) simulates ten seconds of processing without allowing a fresh timestamp on old pixels.
+- Current-frame `matches` retain repeated labels, unlike `FrameResult.names` used for legacy sessions. The parameterized `test_presence_preserves_duplicate_face_count_and_bounds_payload` covers empty, two same-label, eight and nine-face results. Focus transitions suppress available identities through `test_presence_unavailable_during_autofocus_transition`.
+- [Helper `validPresence`](node_helper.js) requires six own fields, finite nonnegative observation time, worker epoch, positive safe sequence and at most eight bounded labels. Extra fields and Unicode control/format/surrogate labels are rejected. [Node/frontend tests](tests/test_node_helper.cjs) verify this separate metadata path without changing cached session semantics.
+
+Verification completed before this record: 217 Python tests on Python 3.13.11 (94% overall / 97% recognition-worker coverage), 23 Node tests, JavaScript lint and targeted Ruff lint/format pass. This metadata is observational and unauthenticated: consumers must enforce short freshness expiry, independent stability, exact private mappings and their own authorization. Clock jumps fail only in a consumer that checks age. A paused/dead worker can stop sending; the Face frontend does not synthesize camera evidence. No inference accuracy, face liveness or private hardware result is established by these synthetic tests.
