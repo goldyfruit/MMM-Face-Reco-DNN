@@ -1,8 +1,15 @@
-Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add opt-in dated North Pole postcards with unchanged explicit photo consent.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Require a valid ready scene before arming photo capture after startup or reconnection.
 
 # Proposed follow-up work
 
 ## 2026-11-05 — Postcard polish follow-through
+
+- **Implemented 2.4.1 correction:** Only a valid active non-capture view establishes
+  readiness before future capture. Invalid/off/hidden startup input cannot arm
+  an old persisted action after reconnection. **Proposal:** Retain all eight
+  invalid-startup/retake cases in [photo tests](tests/test_experience_camera.py)
+  during state/bridge changes. **Impact:** Prevents transport recovery from
+  becoming unintended permission to take a new photo.
 
 - **Implemented correction:** A newly started worker no longer replays an
   already-pending capture from fresh bridge heartbeats. Preserve the startup

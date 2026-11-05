@@ -1,6 +1,27 @@
-Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add opt-in dated North Pole postcards with unchanged explicit photo consent.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Require a valid ready scene before arming photo capture after startup or reconnection.
 
 # Evidence-based audit
+
+## 2026-11-05 — Valid readiness required after startup (2.4.1 source)
+
+Reproduced a loophole in the 2.4.0 startup guard: `PhotoBooth.process_frame()`
+set `_observed_state` before validating the public view. A disconnected first
+envelope followed by a fresh persisted capture borrowed one frame and emitted
+a new countdown/preview without another native action. The corrected guard
+sets readiness only after `experience_view()` returns a valid active scene.
+Missing, malformed, disconnected, off, stale, stale-Voice and hidden-presentation
+input cannot arm it. The first valid already-pending capture is consumed as
+unavailable; a newer explicit retake still works. A valid non-capture scene
+continues to arm normal future requests.
+
+Evidence: eight parameterized reconnect regressions and two normal readiness
+cases in [tests/test_experience_camera.py](tests/test_experience_camera.py), with
+the existing reset/heartbeat suppression tests retained. The complete suite
+passes 314 Python tests (91% coverage), 25 Node tests, ESLint and pinned Ruff
+0.12.4 formatting/targeted lint. This is synthetic-only validation. No live
+recording, service restart, private photo or gallery access occurred. The
+existing `docs/performance.md` change is preserved. Historical 2.4.0 evidence
+below describes the superseded first-observation guard.
 
 ## 2026-11-05 — Postcard consent and capture consistency (2.4.0 source)
 

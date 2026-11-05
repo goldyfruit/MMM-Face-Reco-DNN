@@ -196,10 +196,15 @@ class PhotoBooth:
         self, frame: Callable[[], np.ndarray], observed_at: float, monotonic: float
     ) -> None:
         """Call the shared lazy full frame exactly once after an explicit countdown."""
+        view = experience_view(self.state_file, observed_at)
+        if view is None:
+            self.reset()
+            return
+        # Only a valid active view establishes readiness. Missing/off/stale or
+        # presentation-hidden state cannot arm a persisted capture on reconnect.
         first_observation = not self._observed_state
         self._observed_state = True
-        view = experience_view(self.state_file, observed_at)
-        if view is None or view.stage != "keepsake":
+        if view.stage != "keepsake":
             self.reset()
             return
         if self.identity != view.identity:

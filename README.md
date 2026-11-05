@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add opt-in dated North Pole postcards with unchanged explicit photo consent.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Require a valid ready scene before arming photo capture after startup or reconnection.
 
 # MMM-Face-Reco-DNN — CPU/ISP performance fork
 
@@ -83,6 +83,12 @@ contract. Local tests use synthetic pixels; no physical camera or family photo
 was used during implementation.
 
 ## 2.4.0 North Pole postcard preview
+
+The 2.4.1 correction requires a valid active ready scene before arming a future
+capture. Disconnected, stale, off or hidden display state cannot count as
+readiness and replay an old capture when the connection returns. If the first
+valid scene already requests a photo, the worker reports unavailable until a
+new explicit retake. [Startup regressions](tests/test_experience_camera.py).
 
 At the keepsake scene, choose “take Christmas postcard” or “prends la carte
 postale de Noël” for an ivory, evergreen and gold North Pole frame with the
