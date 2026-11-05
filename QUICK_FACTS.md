@@ -1,11 +1,11 @@
-Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document armed local lost-letter stamp detection.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Record live Christmas experience 2.3.0 activation.
 
 # Quick facts
 
 | Field | Value |
 |---|---|
 | Package | mmm-face-reco-dnn |
-| Version | 2.2.1; source of truth package.json |
+| Version | 2.3.0; source of truth package.json |
 | JavaScript entry | MMM-Face-Reco-DNN.js / node_helper.js |
 | Python entry | tools/recognition.py:main; tools/encode.py:main |
 | Gallery | Existing names/encodings pickle with128-value dlib descriptors |
@@ -36,3 +36,27 @@ Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document armed local lost-letter
 Hub display is armed. It sends the revision, language and time to a local
 Unix socket and keeps no frame files.
 [Worker integration](tools/recognition.py) · [Stamp gate](tools/utils/letter_marker.py)
+
+## Christmas camera extension (2.3.0)
+
+| Field | Value |
+|---|---|
+| Camera ownership | Existing CameraStream and current captured.full_frame only; no second handle |
+| Fixed props | THALOVANT:PROP:LETTER / STAR / BELL / GIFT; expected prop only, at most 2 scans per second |
+| Gates | Fresh connected episode, protocol_enabled true, current expected prop, fresh listening Voice, no unrelated presentation/video |
+| Gateway | tools/experience_gateway.py; owner ControlClient.from_file; fixed POST /v1/ask only; one pending request |
+| Socket | /christmas-greetings/experience.sock; private Unix socket, exact4field observations; no image payload |
+| Photo trigger | Explicit native capture/retake only at keepsake; at least3second quiet countdown |
+| Photo identity | Current episode identity plus exact native photo_capture_revision; old preview cannot satisfy newer save |
+| Preview | In-memory unannotated bounded JPEG; no photo file until explicit save |
+| Save | christmasPhotoDirectory absolute/private owned path; default worker ~/.local/share/thalovant/christmas-photos; file0600 / folder0700 |
+| Status | CHRISTMAS_PHOTO_STATUS; current revision/capture_revision, fixed status, optional countdown seconds or bounded base64 JPEG |
+| Validation | 279 Python tests, 25 Node tests, JavaScript lint and targeted Python Ruff checks pass |
+| Hardware acceptance | Not exercised; tests use synthetic frames and stub Voice client |
+
+## Live installation - 2026-11-05
+
+- Installed component version: `2.3.0`.
+- Coordinated native Protocol/bridge: `0.10.1`; Companion `0.6.0`; Games `0.2.0`; mirror `0.17.0`; camera `2.3.0`.
+- Music activation requires fresh enabled Protocol; pause/off stays quiet.
+- Voice service and calibrated camera settings are preserved.

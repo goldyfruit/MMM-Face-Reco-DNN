@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document armed local lost-letter stamp detection.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Record live Christmas experience 2.3.0 activation.
 
 # Evidence-based audit
 
@@ -53,3 +53,45 @@ requesting full-resolution pixels. Only the two fixed stamp values can produce
 an event. The socket test checks that the event contains only the revision,
 language and capture time. The latch test covers repeated frames and removing
 the stamp before a new take. [Marker tests](tests/test_letter_marker.py)
+
+## 2026-11-05 - Explicit Christmas props and keepsakes (2.3.0)
+
+`ExperiencePropScanner` and `PhotoBooth` in
+[experience_camera.py](tools/utils/experience_camera.py) borrow the existing
+request's lazy full frame only after the [public episode gate](tools/utils/experience_state.py)
+admits the current scene. Camera calibration, face gallery matching and normal
+enrollment settings were preserved. Fixed prop latches are bound to episode
+identity and expected prop, so letter-to-star transitions work without a blank
+frame while a held same prop cannot retrigger on a heartbeat.
+
+The [source-owned gateway](tools/experience_gateway.py) accepts exact bounded
+prop/revision/time metadata and invokes only the owner-authorized fixed native
+command. It rechecks the current state before dispatch, admits one pending
+request, suppresses repeats and sends its tiny local acknowledgement without
+blocking camera ownership on a slow Voice response. No alternate camera or
+public HTTP command server is introduced.
+
+Keepsake previews are memory-only until explicit save. The in-memory capture
+revision must equal native `photo_capture_revision`; a skipped retake cannot
+save an older image. Exit/off/stale/pause discard uncommitted bytes. Save uses an
+owned private directory, exclusive mode-0600 filenames, no symlink destination
+and no face-gallery enrollment. Public status is bounded and sent only through
+the known helper/frontend path, with no filename or private labels.
+
+Validation: 279 Python tests and 25 Node tests passed; JavaScript lint and
+Ruff on new/modified camera helpers passed. [Synthetic regressions](tests/test_experience_camera.py)
+cover wrong/stale props, malformed metadata, direct prop swaps, countdown,
+preview/save/discard, skipped-capture races, late scene changes, replay,
+clock expiry, permissions, queue bounds and a gateway import without NumPy or
+OpenCV. [Worker regressions](tests/test_runtime.py) prove single-owner reuse and
+photo reset. Tests do not establish physical QR range, room focus, photo exposure
+or current-device service configuration. Existing user edits in
+`docs/performance.md` were preserved.
+
+## 2026-11-05 - Live activation 2.3.0
+
+The live camera module and fixed prop gateway are installed. One existing camera worker runs with preserved focus, lens, exposure, frame rate, dataset and gallery settings. The private persistent photo mount is owned by UID 1000 with mode 0700; gateway socket is mode 0600. Startup error counts are zero. No photo capture was requested during rollout.
+
+Evidence: [camera tests](tests/test_experience_camera.py), `ExperiencePropScanner`, `PhotoBooth`, `ExperienceGateway`. The rollout uses host-local backups and versioned native
+artifacts. Normal Voice remained running. These are deployment/metadata checks,
+not a claim of physical room recognition, camera distance or photo quality.

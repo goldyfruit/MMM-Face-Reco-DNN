@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document tested fresh per-frame presence metadata and release 2.2.1 without changing authentication or cached login behavior.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add expected Christmas prop observations and explicit memory-only keepsake previews.
 
 # MMM-Face-Reco-DNN — CPU/ISP performance fork
 
@@ -57,3 +57,27 @@ Face AF verifies the manual seed from a fresh frame before scanning, bounds each
 The observation timestamp is taken when a capture becomes available, before recognition, so slow processing cannot make an old frame appear newly observed. Consumers must enforce timestamp freshness and stable presence themselves; missing signals after pause or worker failure are not proof that anyone remains present. No pixels, face coordinates, scores, gallery contents, spoken commands or authentication grants are added to this signal. Recognition remains personalization, not authentication. Optional Santa greeting integration is explicitly enabled in its separate Christmas module; this Face module does not select profiles or speak names.
 
 Validation for this release: 217 Python tests under Python 3.13.11, all 23 Node helper/frontend tests, JavaScript lint and targeted Python lint/format checks pass. Tests use synthetic frames, identities and fake clocks; no camera or private gallery was read for this change. See [the contract](docs/index.md#fresh-presence-contract) and [audit](AUDIT.md).
+
+## 2.3.0 Christmas props and requested keepsakes
+
+The existing camera worker can recognize four printed Christmas Protocol stamps:
+`THALOVANT:PROP:LETTER`, `THALOVANT:PROP:STAR`, `THALOVANT:PROP:BELL`, and
+`THALOVANT:PROP:GIFT`. It scans only the prop the active authenticated experience
+expects. Voice alternatives remain available. The source-owned
+[`experience_gateway.py`](tools/experience_gateway.py) admits revision-bound
+metadata to the existing owner-authorized Thalovant Voice control client; no
+new camera handle or arbitrary-command receiver is introduced.
+
+At the keepsake scene, say “take Christmas photo”, then “save Christmas photo”,
+“discard Christmas photo”, or “retake Christmas photo”. French uses “prends la
+photo de Noël”, “garde la photo de Noël”, “supprime la photo de Noël”, or
+“reprends la photo de Noël”. A minimum three-second countdown starts when Voice
+is quiet. The unannotated JPEG preview stays in memory until an explicit save.
+Save creates a private file in `christmasPhotoDirectory`, or the worker user's
+`~/.local/share/thalovant/christmas-photos` by default. A container needs a
+persistent writeable mount there. The saved image is separate from enrollment.
+
+[Setup and fixed gateway](docs/index.md#christmas-props-and-keepsakes-230)
+describes mount paths, UID ownership and the current-action/capture-revision
+contract. Local tests use synthetic pixels; no physical camera or family photo
+was used during implementation.

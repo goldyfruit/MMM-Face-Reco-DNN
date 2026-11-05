@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document armed local lost-letter stamp detection.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Record live Christmas experience 2.3.0 activation.
 
 # Proposed follow-up work
 
@@ -38,3 +38,24 @@ References: [`run` and `FrameResult`](tools/recognition.py), [helper `validPrese
 Use `LetterScanner` with a 9–11 cm printed stamp at the filming position.
 A local rehearsal can establish the best distance and angle for the existing
 lens settings. [Synthetic decoder tests](tests/test_letter_marker.py)
+
+## 2026-11-05 - Christmas camera implementation follow-through
+
+- **Implemented:** fixed expected props and explicit keepsake previews now use
+  the existing camera owner and the [source-owned gateway](tools/experience_gateway.py).
+  Retain [race and state regressions](tests/test_experience_camera.py) on updates.
+- **Opportunity:** physical stamp size, mirror reflections and low winter light
+  affect recognition. **Proposed action:** rehearse LETTER then STAR at normal
+  standing distance using the existing lens/exposure configuration. **Impact:**
+  verifies the physical interaction without guessing calibration changes.
+- **Opportunity:** unsaved photos intentionally disappear after worker restart.
+  **Proposed action:** explain unavailable status and use explicit retake, as the
+  [photo contract](docs/index.md#explicit-photo-actions-and-preview-contract) does.
+  **Impact:** prevents silent replacement or stale-image saves.
+
+## Follow-up after live activation - 2026-11-05
+
+The authorized runtime/module/gateway activation is complete. The remaining
+opportunity is a normal-distance family rehearsal: check instruction
+readability, microphone recognition, a printed prop and a requested keepsake.
+This measures the actual room without changing the existing calibration.

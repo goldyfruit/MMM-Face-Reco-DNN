@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document armed local lost-letter stamp detection.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Record live Christmas experience 2.3.0 activation.
 
 # FAQ
 
@@ -58,3 +58,42 @@ Arm the lost-letter rehearsal, then hold the printed square still and flat
 toward the camera. Keep its white border clear. Lower the prop for a beat
 between takes so `LetterScanner.scan()` observes two empty samples.
 [Scanner implementation](tools/utils/letter_marker.py)
+
+## How do I use a physical Christmas prop?
+
+Print one of the fixed stamps LETTER/STAR/BELL/GIFT with the QR contents
+`THALOVANT:PROP:LETTER`, `THALOVANT:PROP:STAR`, `THALOVANT:PROP:BELL`, or
+`THALOVANT:PROP:GIFT`. Hold the currently requested prop toward the camera.
+The active episode and revision authorize its effect; arbitrary QR text is
+ignored. [Scanner and PhotoBooth](tools/utils/experience_camera.py) reuse the
+existing camera request. [Gateway setup](docs/index.md#christmas-props-and-keepsakes-230)
+requires the owner Voice service and shared socket mount. Voice commands remain
+available when a printed stamp cannot be read.
+
+## Does the keepsake flow save photos automatically?
+
+No. “Take Christmas photo” starts a quiet countdown and an in-memory preview.
+Only “save Christmas photo” writes that exact preview into the private configured
+photo folder. Retake replaces it; discard, exit, Protocol off, worker pause and
+stale state release uncommitted bytes. The saved photo is not face enrollment.
+An old preview cannot satisfy a save for a newer capture revision. A worker
+restart loses its unsaved preview and asks for another capture rather than
+silently taking or saving a replacement.
+
+## Why did the photo say unavailable?
+
+There may be no preview for the current capture revision, the scene may have
+changed during capture, encoding may have failed, or the photo destination may
+not be an owned private absolute directory. Retake while the keepsake scene is
+active; configure a persistent writable photo mount for saves. Camera calibration
+is not changed by the feature. See [photo contract](docs/index.md#explicit-photo-actions-and-preview-contract)
+and [regressions](tests/test_experience_camera.py).
+
+## Is the connected experience installed on the mirror?
+
+The coordinated release was activated on mm01 on 2026-11-05. Use the configured
+wake phrase with “start Christmas family adventure”. Camera props need the
+matching printed card at the requested step; saving a keepsake is explicit.
+Use “pause Christmas adventure” or “disable Christmas Protocol” for quiet.
+The final deployment evidence distinguishes observed player state from
+physical hearing/recognition.

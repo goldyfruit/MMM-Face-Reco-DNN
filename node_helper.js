@@ -36,6 +36,33 @@ function validPresence(value) {
   );
 }
 
+// Explicit keepsake output is separate from face enrollment and ordinary preview.
+function validChristmasPhoto(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1 || !Number.isSafeInteger(value.revision) || value.revision < 0) return false;
+  const status = value.status;
+  if (!['countdown', 'preview', 'saved', 'discarded', 'unavailable'].includes(status)) return false;
+  const capture = Object.prototype.hasOwnProperty.call(value, 'capture_revision');
+  if (capture && (!Number.isSafeInteger(value.capture_revision) || value.capture_revision < 1 || value.capture_revision > value.revision)) return false;
+  const fields = ['version', 'revision', 'status', ...(capture ? ['capture_revision'] : []), ...(status === 'countdown' ? ['seconds'] : status === 'preview' ? ['image'] : [])];
+  if (Object.keys(value).length !== fields.length || !fields.every(key => Object.prototype.hasOwnProperty.call(value, key))) return false;
+  if (status === 'countdown') return Number.isInteger(value.seconds) && value.seconds >= 1 && value.seconds <= 3;
+  if (status === 'preview')
+    return (
+      typeof value.image === 'string' &&
+      value.image.length > 0 &&
+      value.image.length <= 666668 &&
+      value.image.length % 4 === 0 &&
+      /^[A-Za-z0-9+/]+={0,2}$/.test(value.image) &&
+      value.image.startsWith('/9j/')
+    );
+  return true;
+}
+
+function christmasPhotoArguments(config) {
+  const directory = config.christmasPhotoDirectory;
+  return typeof directory === 'string' && directory.length > 0 ? ['--christmasPhotoDirectory=' + directory] : [];
+}
+
 module.exports = NodeHelper.create({
   pyshell: null,
   _workerState: null,
@@ -138,6 +165,7 @@ module.exports = NodeHelper.create({
         '--yunetTopK=' + (this.config.yunetTopK ?? 5000),
         '--identityMargin=' + (this.config.identityMargin ?? 0),
         '--previewQuality=' + (this.config.previewQuality ?? 95),
+        ...christmasPhotoArguments(this.config),
       ],
     };
 
@@ -211,6 +239,9 @@ module.exports = NodeHelper.create({
           available: value.available,
           labels: value.labels.slice(),
         });
+      }
+      if (validChristmasPhoto(message.christmas_photo)) {
+        self.sendSocketNotification('christmas_photo', { ...message.christmas_photo });
       }
       // A status message has received and will log
       if (Object.prototype.hasOwnProperty.call(message, 'status')) {

@@ -494,3 +494,50 @@ test('fresh presence is bounded and forwarded independently from cached login st
   front.module.socketNotificationReceived('presence', value);
   assert.equal(front.notifications.at(-1)[0], 'FACE_RECOGNITION_PRESENCE');
 });
+
+test('explicit Christmas keepsake statuses are bounded and separate from face preview', () => {
+  const { helper, shells, notifications, logs } = setup();
+  helper.config.christmasPhotoDirectory = '/private/keepsakes';
+  helper.python_start();
+  assert.ok(shells[0].options.args.includes('--christmasPhotoDirectory=/private/keepsakes'));
+  const image = Buffer.from([255, 216, 255, 217]).toString('base64');
+  const value = { version: 1, revision: 7, capture_revision: 6, status: 'preview', image };
+  shells[0].message({ christmas_photo: value });
+  assert.equal(notifications.at(-1).name, 'christmas_photo');
+  assert.deepEqual(JSON.parse(JSON.stringify(notifications.at(-1).payload)), value);
+  assert.ok(!logs.join(' ').includes(image));
+  const before = notifications.length;
+  for (const patch of [
+    { version: true },
+    { revision: -1 },
+    { capture_revision: 8 },
+    { capture_revision: true },
+    { status: 'upload' },
+    { image: 'https://example.invalid/' },
+    { image: 'A'.repeat(700000) },
+    { image, filename: '/private/file.jpg' },
+    { status: 'saved', image },
+    { status: 'countdown', image, seconds: 4 },
+  ]) {
+    shells[0].message({ christmas_photo: { ...value, ...patch } });
+  }
+  assert.equal(notifications.length, before);
+  shells[0].message({ christmas_photo: { version: 1, revision: 8, capture_revision: 8, status: 'countdown', seconds: 3 } });
+  assert.equal(notifications.at(-1).payload.status, 'countdown');
+  shells[0].message({ christmas_photo: { version: 1, revision: 9, capture_revision: 8, status: 'saved' } });
+  assert.equal(notifications.at(-1).payload.status, 'saved');
+  const front = setupFrontend();
+  front.module.socketNotificationReceived('christmas_photo', value);
+  assert.equal(front.notifications.at(-1)[0], 'CHRISTMAS_PHOTO_STATUS');
+  assert.deepEqual(front.notifications.at(-1)[1], value);
+});
+
+test('failed or paused camera worker cannot forward late keepsake pixels', () => {
+  const { helper, shells, notifications } = setup();
+  helper.python_start();
+  const old = shells[0];
+  old.handlers.error(Error('failure'));
+  const before = notifications.length;
+  old.message({ christmas_photo: { version: 1, revision: 4, status: 'preview', image: '/9j/2Q==' } });
+  assert.equal(notifications.length, before);
+});

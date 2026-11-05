@@ -103,6 +103,11 @@ class Arguments:
         parser.add_argument("--yunetTopK", type=int, default=5000)
         parser.add_argument("--identityMargin", type=float, default=0.0)
         parser.add_argument("--previewQuality", type=int, default=95)
+        parser.add_argument(
+            "--christmasPhotoDirectory",
+            default=None,
+            help="Private owned photo folder; created only after an explicit Christmas photo save",
+        )
         parsed = vars(parser.parse_args(argv))
         if parsed["interval"] <= 0:
             parser.error("interval must be positive")
@@ -116,6 +121,11 @@ class Arguments:
                 parser.error("cameraLensPosition requires manual or face autofocus")
         if not 1 <= parsed["previewQuality"] <= 100:
             parser.error("previewQuality must be between 1 and 100")
+        if (
+            parsed["christmasPhotoDirectory"] is not None
+            and not Path(parsed["christmasPhotoDirectory"]).is_absolute()
+        ):
+            parser.error("christmasPhotoDirectory must be absolute")
         if not 0 < parsed["tolerance"] <= 2 or not 0 <= parsed["identityMargin"] <= 2:
             parser.error("tolerance and identityMargin are outside their valid ranges")
         Arguments.args = parsed

@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-03 - Motive: Document armed local lost-letter stamp detection.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Record live Christmas experience 2.3.0 activation.
 
 # Maintenance log —2026-11-02
 
@@ -62,3 +62,39 @@ Codex (GPT-6) wrote `LetterScanner`, integrated the existing capture and ran
 the synthetic tests. The owner requested local camera recognition for the prop.
 The scanner receives only frame memory from the existing camera worker.
 [Worker](tools/recognition.py) · [Tests](tests/test_letter_marker.py)
+
+## 2026-11-05 - Christmas props and explicit keepsakes (2.3.0)
+
+Added fixed expected-prop scanning, a source-owned fixed Voice gateway,
+revision/capture-bound keepsake countdown and in-memory previews, explicit
+private saves/discards, worker integration and bounded helper/frontend status.
+All new camera uses share the existing CameraStream request. Camera calibration
+and the user's existing `docs/performance.md` changes were preserved.
+
+Verification: 279 Python tests and 25 Node tests passed; JavaScript lint,
+new/modified Python helper Ruff checks and git diff whitespace checks pass.
+All frames, state files and owner requests used synthetic fixtures or stubs.
+No physical camera, family images, private gallery, Voice credential or current
+runtime was accessed or activated by this implementation.
+
+### Transparency report
+
+- **AI model:** Codex (GPT-6).
+- **Actions taken:** Implemented the fixed camera/gateway/state helpers,
+  integrated existing worker/helper/frontend paths, added regression tests,
+  documented source-owned setup and updated package version metadata.
+- **Oversight:** User authorized the proposed Christmas experience. Automated
+  checks and source review performed; physical room acceptance and device
+  activation remain separate. No new biometric enrollment was performed.
+
+## 2026-11-05 - Live activation 2.3.0
+
+The live camera module and fixed prop gateway are installed. One existing camera worker runs with preserved focus, lens, exposure, frame rate, dataset and gallery settings. The private persistent photo mount is owned by UID 1000 with mode 0700; gateway socket is mode 0600. Startup error counts are zero. No photo capture was requested during rollout.
+
+### Transparency report
+
+Codex (GPT-6) used the user-provided mirror SSH address, existing operator
+upgrade paths, private rollback backups and fixed silent owner-Voice requests.
+No extra recording/listen turn or photo capture was requested by the checks;
+the normal wake-word service remained running. User authorization covers
+implementation and installation of the reviewed Christmas experience.

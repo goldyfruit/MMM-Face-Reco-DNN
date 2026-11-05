@@ -837,3 +837,31 @@ def test_lens_position_requires_supported_mode_and_preserves_dioptres() -> None:
             ["--cameraAutofocus", mode, "--cameraLensPosition", "1.0"]
         )
         assert Arguments.get("cameraLensPosition") == 1.0
+
+
+def test_christmas_features_borrow_same_live_request_and_reset_on_worker_close(
+    worker: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The new features cannot create another camera or retain a photo after exit."""
+    scanner = SimpleNamespace(scan=Mock())
+    booth = SimpleNamespace(process_frame=Mock(), reset=Mock())
+    monkeypatch.setattr(recognition, "ExperiencePropScanner", lambda: scanner)
+    monkeypatch.setattr(recognition, "PhotoBooth", lambda *args, **kwargs: booth)
+    calls = 0
+    original = worker.engine.recognize.return_value
+
+    def recognize(_: np.ndarray) -> recognition.FrameResult:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            worker.closed.set()
+        return original
+
+    worker.engine.recognize.side_effect = recognize
+    recognition.run(worker.settings)
+    assert worker.factory.call_count == 1
+    assert scanner.scan.call_count == booth.process_frame.call_count == 1
+    assert scanner.scan.call_args.args[0] is worker.camera.requests[0].full_frame
+    assert booth.process_frame.call_args.args[0] is worker.camera.requests[0].full_frame
+    booth.reset.assert_called_once()
+    assert worker.camera.requests[0].full_frame.call_count == 0
