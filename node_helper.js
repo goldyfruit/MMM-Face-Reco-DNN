@@ -13,6 +13,56 @@ const NodeHelper = require('node_helper');
 const { PythonShell } = require('python-shell');
 const onExit = require('signal-exit');
 
+// Fixed metadata only; duplicate labels preserve the actual face count.
+function validPresence(value) {
+  return (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 6 &&
+    ['version', 'epoch', 'sequence', 'observed_at', 'available', 'labels'].every(key => Object.prototype.hasOwnProperty.call(value, key)) &&
+    value.version === 1 &&
+    typeof value.epoch === 'string' &&
+    /^[a-f0-9]{32}$/.test(value.epoch) &&
+    Number.isSafeInteger(value.sequence) &&
+    value.sequence > 0 &&
+    Number.isFinite(value.observed_at) &&
+    value.observed_at >= 0 &&
+    typeof value.available === 'boolean' &&
+    Array.isArray(value.labels) &&
+    value.labels.length <= 8 &&
+    value.labels.every(label => typeof label === 'string' && label.length > 0 && label.length <= 100 && !/[\p{Cc}\p{Cf}\p{Cs}]/u.test(label)) &&
+    (value.available || value.labels.length === 0)
+  );
+}
+
+// Explicit keepsake output is separate from face enrollment and ordinary preview.
+function validChristmasPhoto(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1 || !Number.isSafeInteger(value.revision) || value.revision < 0) return false;
+  const status = value.status;
+  if (!['countdown', 'preview', 'saved', 'discarded', 'unavailable'].includes(status)) return false;
+  const capture = Object.prototype.hasOwnProperty.call(value, 'capture_revision');
+  if (capture && (!Number.isSafeInteger(value.capture_revision) || value.capture_revision < 1 || value.capture_revision > value.revision)) return false;
+  const fields = ['version', 'revision', 'status', ...(capture ? ['capture_revision'] : []), ...(status === 'countdown' ? ['seconds'] : status === 'preview' ? ['image'] : [])];
+  if (Object.keys(value).length !== fields.length || !fields.every(key => Object.prototype.hasOwnProperty.call(value, key))) return false;
+  if (status === 'countdown') return Number.isInteger(value.seconds) && value.seconds >= 1 && value.seconds <= 3;
+  if (status === 'preview')
+    return (
+      typeof value.image === 'string' &&
+      value.image.length > 0 &&
+      value.image.length <= 666668 &&
+      value.image.length % 4 === 0 &&
+      /^[A-Za-z0-9+/]+={0,2}$/.test(value.image) &&
+      value.image.startsWith('/9j/')
+    );
+  return true;
+}
+
+function christmasPhotoArguments(config) {
+  const directory = config.christmasPhotoDirectory;
+  return typeof directory === 'string' && directory.length > 0 ? ['--christmasPhotoDirectory=' + directory] : [];
+}
+
 module.exports = NodeHelper.create({
   pyshell: null,
   _workerState: null,
@@ -115,6 +165,7 @@ module.exports = NodeHelper.create({
         '--yunetTopK=' + (this.config.yunetTopK ?? 5000),
         '--identityMargin=' + (this.config.identityMargin ?? 0),
         '--previewQuality=' + (this.config.previewQuality ?? 95),
+        ...christmasPhotoArguments(this.config),
       ],
     };
 
@@ -178,6 +229,20 @@ module.exports = NodeHelper.create({
     shell.on('message', function (message) {
       if (self.pyshell !== shell || failed || state.stopped || state.draining || !state.active || !message || typeof message !== 'object') return;
       if (message.ready === true) self.worker_availability(true);
+      if (validPresence(message.presence)) {
+        const value = message.presence;
+        self.sendSocketNotification('presence', {
+          version: 1,
+          epoch: value.epoch,
+          sequence: value.sequence,
+          observed_at: value.observed_at,
+          available: value.available,
+          labels: value.labels.slice(),
+        });
+      }
+      if (validChristmasPhoto(message.christmas_photo)) {
+        self.sendSocketNotification('christmas_photo', { ...message.christmas_photo });
+      }
       // A status message has received and will log
       if (Object.prototype.hasOwnProperty.call(message, 'status')) {
         console.log('[' + self.name + '] ' + message.status);

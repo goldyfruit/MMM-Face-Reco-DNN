@@ -212,6 +212,87 @@ def test_sigterm_releases_request_and_camera(worker: SimpleNamespace) -> None:
     assert worker.thread_factory.call_count == 0
 
 
+def test_presence_is_fresh_per_inference_and_does_not_export_cached_sessions(
+    worker: SimpleNamespace,
+) -> None:
+    """A consumer receives current labels, not delayed login state or pixels."""
+    result = worker.engine.recognize.return_value
+    calls = 0
+
+    def recognize(_: np.ndarray) -> recognition.FrameResult:
+        """Return one present frame followed by a genuinely empty frame."""
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            worker.closed.set()
+            return recognition.FrameResult([], [])
+        return result
+
+    worker.engine.recognize.side_effect = recognize
+    recognition.run(worker.settings)
+    values = [value for kind, value in worker.events if kind == "presence"]
+    assert len(values) == 2
+    assert values[0]["labels"] == ["subject"] and values[1]["labels"] == []
+    assert values[0]["sequence"] == 1 and values[1]["sequence"] == 2
+    assert values[0]["epoch"] == values[1]["epoch"] and len(values[0]["epoch"]) == 32
+    assert set(values[0]) == {
+        "version",
+        "epoch",
+        "sequence",
+        "observed_at",
+        "available",
+        "labels",
+    }
+
+
+def test_presence_timestamp_precedes_slow_inference(
+    worker: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A delayed result cannot relabel old observed pixels with a fresh timestamp."""
+    now = [1000.0]
+    monkeypatch.setattr(recognition.time, "time", lambda: now[0])
+    result = worker.engine.recognize.return_value
+
+    def recognize(_: np.ndarray) -> recognition.FrameResult:
+        """Simulate slow processing, without sleeping or touching a camera."""
+        now[0] += 10
+        worker.closed.set()
+        return result
+
+    worker.engine.recognize.side_effect = recognize
+    recognition.run(worker.settings)
+    value = next(value for kind, value in worker.events if kind == "presence")
+    assert value["observed_at"] == 1000.0 and now[0] == 1010.0
+
+
+@pytest.mark.parametrize("count", [0, 2, 8, 9])
+def test_presence_preserves_duplicate_face_count_and_bounds_payload(
+    worker: SimpleNamespace, count: int
+) -> None:
+    """Two same-label faces stay a group; over-cap groups become unavailable."""
+    worker.engine.recognize.return_value = recognition.FrameResult(
+        [Detection((1, 10, 10, 1))] * count,
+        [RecognitionMatch("subject", 0.1, True)] * count,
+    )
+    worker.closed.on_wait = worker.closed.set
+    recognition.run(worker.settings)
+    value = next(value for kind, value in worker.events if kind == "presence")
+    assert value["available"] is (count <= 8)
+    assert value["labels"] == (["subject"] * count if count <= 8 else [])
+
+
+def test_presence_unavailable_during_autofocus_transition(
+    worker: SimpleNamespace,
+) -> None:
+    """Unsettled autofocus cannot expose current identities as settled presence."""
+    worker.settings["cameraAutofocus"] = "face"
+    worker.camera.face_focus_status["settled"] = False
+    worker.closed.on_wait = worker.closed.set
+    recognition.run(worker.settings)
+    value = next(value for kind, value in worker.events if kind == "presence")
+    assert value["available"] is False and value["labels"] == []
+
+
 def test_pause_resume_logs_out_then_restarts_camera(worker: SimpleNamespace) -> None:
     """A notification pause cannot keep stale identities logged in."""
     worker.settings["run_only_on_notification"] = 1
@@ -529,11 +610,11 @@ def test_opencv_thread_budget_preserves_default_or_applies_before_devices(
     order = []
     set_threads = Mock(side_effect=lambda value: order.append(("threads", value)))
     monkeypatch.setattr(recognition.cv2, "setNumThreads", set_threads)
-    worker.engine_factory.side_effect = (
-        lambda *args: order.append(("engine", None)) or worker.engine
+    worker.engine_factory.side_effect = lambda *args: (
+        order.append(("engine", None)) or worker.engine
     )
-    worker.factory.side_effect = (
-        lambda **kwargs: order.append(("camera", None)) or worker.camera
+    worker.factory.side_effect = lambda **kwargs: (
+        order.append(("camera", None)) or worker.camera
     )
     result = worker.engine.recognize.return_value
 
@@ -756,3 +837,31 @@ def test_lens_position_requires_supported_mode_and_preserves_dioptres() -> None:
             ["--cameraAutofocus", mode, "--cameraLensPosition", "1.0"]
         )
         assert Arguments.get("cameraLensPosition") == 1.0
+
+
+def test_christmas_features_borrow_same_live_request_and_reset_on_worker_close(
+    worker: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The new features cannot create another camera or retain a photo after exit."""
+    scanner = SimpleNamespace(scan=Mock())
+    booth = SimpleNamespace(process_frame=Mock(), reset=Mock())
+    monkeypatch.setattr(recognition, "ExperiencePropScanner", lambda: scanner)
+    monkeypatch.setattr(recognition, "PhotoBooth", lambda *args, **kwargs: booth)
+    calls = 0
+    original = worker.engine.recognize.return_value
+
+    def recognize(_: np.ndarray) -> recognition.FrameResult:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            worker.closed.set()
+        return original
+
+    worker.engine.recognize.side_effect = recognize
+    recognition.run(worker.settings)
+    assert worker.factory.call_count == 1
+    assert scanner.scan.call_count == booth.process_frame.call_count == 1
+    assert scanner.scan.call_args.args[0] is worker.camera.requests[0].full_frame
+    assert booth.process_frame.call_args.args[0] is worker.camera.requests[0].full_frame
+    booth.reset.assert_called_once()
+    assert worker.camera.requests[0].full_frame.call_count == 0

@@ -1,4 +1,4 @@
-Last Edit: Codex - 2026-11-02 - Motive: Document advertised camera controls and tested worker/session recovery.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Record live Christmas experience 2.3.0 activation.
 
 # Evidence-based audit
 
@@ -37,3 +37,61 @@ Follow-up YuNet-specific scaling benchmark:4threads used65–68ms CPU at22.8–2
 Current validation: 210 Python tests pass under actual Python 3.10.22 and 3.13.11, including 80 camera/controller and 50 runtime tests; 22 Node tests, JavaScript lint, targeted Ruff and Python formatting pass. See [camera tests](tests/test_camera.py), [runtime tests](tests/test_runtime.py) and [Node/frontend tests](tests/test_node_helper.cjs). The source tests use synthetic data and clocks; physical face-window AF validation is pending and no new recognition accuracy/FPS gain is claimed. Pre-existing unrelated Ruff findings in the legacy picture utility/test import remain outside this change.
 
 Primary AF references: [libcamera public control definitions](https://github.com/raspberrypi/libcamera/blob/main/src/libcamera/control_ids_core.yaml) define sensor-pixel AF windows, Windows metering and explicit Auto-mode triggers. [Picamera2 configuration](https://github.com/raspberrypi/picamera2/blob/main/picamera2/picamera2.py) shares the main crop with preview lores when aspect preservation is disabled. [Pi 5 per-stream crop discussion](https://lists.libcamera.org/pipermail/libcamera-devel/2024-October/045497.html) distinguishes stream-zero ScalerCrop from per-stream ScalerCrops. The adapter uses actual current-request geometry.
+
+## 2.2.1 current-frame presence review — 2026-11-03
+
+- Fixed post-inference timestamp freshness: [`run`](tools/recognition.py) records observation time before recognition; `test_presence_timestamp_precedes_slow_inference` in [runtime tests](tests/test_runtime.py) simulates ten seconds of processing without allowing a fresh timestamp on old pixels.
+- Current-frame `matches` retain repeated labels, unlike `FrameResult.names` used for legacy sessions. The parameterized `test_presence_preserves_duplicate_face_count_and_bounds_payload` covers empty, two same-label, eight and nine-face results. Focus transitions suppress available identities through `test_presence_unavailable_during_autofocus_transition`.
+- [Helper `validPresence`](node_helper.js) requires six own fields, finite nonnegative observation time, worker epoch, positive safe sequence and at most eight bounded labels. Extra fields and Unicode control/format/surrogate labels are rejected. [Node/frontend tests](tests/test_node_helper.cjs) verify this separate metadata path without changing cached session semantics.
+
+Verification completed before this record: 217 Python tests on Python 3.13.11 (94% overall / 97% recognition-worker coverage), 23 Node tests, JavaScript lint and targeted Ruff lint/format pass. This metadata is observational and unauthenticated: consumers must enforce short freshness expiry, independent stability, exact private mappings and their own authorization. Clock jumps fail only in a consumer that checks age. A paused/dead worker can stop sending; the Face frontend does not synthesize camera evidence. No inference accuracy, face liveness or private hardware result is established by these synthetic tests.
+
+## Armed letter stamps
+
+`LetterScanner.scan()` checks a fresh armed rehearsal and idle Voice before
+requesting full-resolution pixels. Only the two fixed stamp values can produce
+an event. The socket test checks that the event contains only the revision,
+language and capture time. The latch test covers repeated frames and removing
+the stamp before a new take. [Marker tests](tests/test_letter_marker.py)
+
+## 2026-11-05 - Explicit Christmas props and keepsakes (2.3.0)
+
+`ExperiencePropScanner` and `PhotoBooth` in
+[experience_camera.py](tools/utils/experience_camera.py) borrow the existing
+request's lazy full frame only after the [public episode gate](tools/utils/experience_state.py)
+admits the current scene. Camera calibration, face gallery matching and normal
+enrollment settings were preserved. Fixed prop latches are bound to episode
+identity and expected prop, so letter-to-star transitions work without a blank
+frame while a held same prop cannot retrigger on a heartbeat.
+
+The [source-owned gateway](tools/experience_gateway.py) accepts exact bounded
+prop/revision/time metadata and invokes only the owner-authorized fixed native
+command. It rechecks the current state before dispatch, admits one pending
+request, suppresses repeats and sends its tiny local acknowledgement without
+blocking camera ownership on a slow Voice response. No alternate camera or
+public HTTP command server is introduced.
+
+Keepsake previews are memory-only until explicit save. The in-memory capture
+revision must equal native `photo_capture_revision`; a skipped retake cannot
+save an older image. Exit/off/stale/pause discard uncommitted bytes. Save uses an
+owned private directory, exclusive mode-0600 filenames, no symlink destination
+and no face-gallery enrollment. Public status is bounded and sent only through
+the known helper/frontend path, with no filename or private labels.
+
+Validation: 279 Python tests and 25 Node tests passed; JavaScript lint and
+Ruff on new/modified camera helpers passed. [Synthetic regressions](tests/test_experience_camera.py)
+cover wrong/stale props, malformed metadata, direct prop swaps, countdown,
+preview/save/discard, skipped-capture races, late scene changes, replay,
+clock expiry, permissions, queue bounds and a gateway import without NumPy or
+OpenCV. [Worker regressions](tests/test_runtime.py) prove single-owner reuse and
+photo reset. Tests do not establish physical QR range, room focus, photo exposure
+or current-device service configuration. Existing user edits in
+`docs/performance.md` were preserved.
+
+## 2026-11-05 - Live activation 2.3.0
+
+The live camera module and fixed prop gateway are installed. One existing camera worker runs with preserved focus, lens, exposure, frame rate, dataset and gallery settings. The private persistent photo mount is owned by UID 1000 with mode 0700; gateway socket is mode 0600. Startup error counts are zero. No photo capture was requested during rollout.
+
+Evidence: [camera tests](tests/test_experience_camera.py), `ExperiencePropScanner`, `PhotoBooth`, `ExperienceGateway`. The rollout uses host-local backups and versioned native
+artifacts. Normal Voice remained running. These are deployment/metadata checks,
+not a claim of physical room recognition, camera distance or photo quality.

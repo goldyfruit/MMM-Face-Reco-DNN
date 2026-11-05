@@ -1,4 +1,4 @@
-Last Edit: Codex - 2026-11-02 - Motive: Document advertised camera controls and tested worker/session recovery.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add expected Christmas prop observations and explicit memory-only keepsake previews.
 
 # Installation and configuration
 
@@ -50,3 +50,132 @@ Set `cameraAutofocus:'face'` to target detected geometry instead of default mete
 [Helper recovery](../node_helper.js#L27) clears stale sessions/preview immediately through [frontend reset](../MMM-Face-Reco-DNN.js#L405), waits for old-process closure, and bounds retries. Explicit stop/pause suppresses retries and queued activity; a process that ran at least 60 seconds gets a fresh early-failure budget. Normal multi-user logout callbacks bind users independently and emit logout after expiry. This remains personalization, not authentication/liveness.
 
 Current validation: 210 Python tests pass under actual Python 3.10.22 and 3.13.11, including 80 camera/controller and 50 runtime tests; 22 Node tests and lint/format checks pass. See [camera tests](../tests/test_camera.py), [runtime tests](../tests/test_runtime.py) and [audit](../AUDIT.md). Primary AF semantics are documented in [libcamera control definitions](https://github.com/raspberrypi/libcamera/blob/main/src/libcamera/control_ids_core.yaml); [Picamera2 configuration](https://github.com/raspberrypi/picamera2/blob/main/picamera2/picamera2.py) shares the main crop with preview lores when aspect preservation is disabled.
+
+## Fresh presence contract
+
+Release 2.2.1 adds `FACE_RECOGNITION_PRESENCE` independently of legacy login/logout events. [`run`](../tools/recognition.py) sends the `presence` payload; [helper `validPresence`](../node_helper.js) validates it, and [the frontend](../MMM-Face-Reco-DNN.js) forwards the fixed metadata notification.
+
+```json
+{"version":1,"epoch":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sequence":1,"observed_at":1800000000.0,"available":true,"labels":["synthetic-subject"]}
+```
+
+The exact six fields are mandatory. `epoch` is a fresh 32-character lowercase hexadecimal worker UUID; `sequence` increases from one for each inference in that worker. `observed_at` is UNIX seconds recorded when the captured request is entered, before inference, so processing latency remains visible to the consumer. The helper accepts only finite nonnegative timestamps and positive safe integer sequences. Match labels are nonempty strings of at most 100 JavaScript code units, with Unicode control/format/surrogate characters rejected; at most eight entries leave the worker. Consumers can enforce stricter bounds.
+
+Each settled inference publishes its current matches, including duplicate labels. A two-face frame remains two entries even if both match the same label; consumers must not deduplicate this into a single-person greeting. A settled no-face frame is available with an empty list. During pending autofocus or over-cap groups, availability is false with an empty list. Pause, shutdown and failed workers can stop publishing; consumers must expire missing/old snapshots and never use cached login state as a replacement.
+
+No image, face geometry, descriptor, distance, gallery, spoken text, profile selection or authorization is included. This is not liveness detection or authentication. The separate optional Christmas greeting consumer opts in and uses its own freshness, single-face stability, private exact-label mapping and cooldown checks; existing native Voice permissions remain independent. This feature adds no network listener or greeting request client to the Face module.
+
+Validation uses [synthetic worker tests](../tests/test_runtime.py) and [Node/frontend admission tests](../tests/test_node_helper.cjs): 217 Python tests on Python 3.13.11, 23 Node tests, JavaScript lint and targeted Python lint/format pass. No private camera/gallery was accessed for this feature.
+
+## Local lost-letter stamp
+
+`run()` gives `LetterScanner.scan()` a lazy frame callback while the existing
+camera request is live. The scanner requires a fresh public rehearsal state,
+an idle Voice projection and the pre-existing local socket mount. No additional
+camera handle is opened. [Recognition worker](../tools/recognition.py) ·
+[Stamp scanner](../tools/utils/letter_marker.py)
+
+## Christmas props and keepsakes (2.3.0)
+
+`ExperiencePropScanner.scan()` and `PhotoBooth.process_frame()` in
+[experience_camera.py](../tools/utils/experience_camera.py) receive the same lazy
+`CameraFrame.full_frame()` callback while [the worker](../tools/recognition.py)
+still owns the existing camera request. They open no camera, change no focus or
+exposure setting, and do not use face recognition to authorize an action.
+[The lightweight state gate](../tools/utils/experience_state.py) requires fresh
+connected public state, fresh Voice evidence, `protocol_enabled:true` and an
+active episode. An unrelated presentation, video, paused scene or stale state
+cannot trigger camera work. The fixed stamp scanner additionally requires
+Voice listening and the exact current `expected_prop`.
+
+### Shared mounts and optional photo destination
+
+Keep the existing display state directory mounted read-only at
+`/christmas-state`, and mount a shared gateway directory at
+`/christmas-greetings` in the camera worker. The Voice owner service needs the
+same public file and shared socket directory under its own paths. The fixed
+socket is `/christmas-greetings/experience.sock` inside the camera container.
+Use matching numeric UID ownership for the Voice owner and camera worker;
+the source gateway creates a mode-0600 Unix socket and does not expose a
+network listener or distribute Voice credentials to the mirror.
+
+Set `christmasPhotoDirectory:'/christmas-photos'` in the existing Face module
+configuration if using a persistent container photo volume. The directory must
+be absolute, owned by the worker and private (mode 0700). It is created only
+when a save is requested; saved JPEGs use mode 0600 and unique local filenames.
+The default is the worker user's `~/.local/share/thalovant/christmas-photos`.
+Do not point this directory at the face enrollment gallery. Existing camera
+calibration and `extendDataset` behavior are independent and unchanged.
+
+### Source-owned fixed prop gateway
+
+Run this explicitly using the existing **Voice owner's Python environment**
+where `thalovant_voice.control.ControlClient` is already installed:
+
+```sh
+/path/to/voice/python /path/to/MMM-Face-Reco-DNN/tools/experience_gateway.py \
+  --state-file /actual/public/christmas-state/state.json \
+  --socket /actual/shared/christmas-greetings/experience.sock
+```
+
+The `--state-file` and `--socket` paths are host/service paths corresponding
+to the camera's read-only state and shared socket mounts. The gateway imports
+only standard-library state validation; it needs neither OpenCV nor NumPy.
+Its owner-default `ControlClient.from_file()` reads the already provisioned
+local Voice endpoint. Keep the command in the normal owner-managed service
+supervisor if automatic restart is needed; this source change does not install
+or activate a system service.
+
+The camera sends exactly `{version:1,revision,prop,observed_at}`. `process()` in
+[experience_gateway.py](../tools/experience_gateway.py) rejects stale, wrong,
+unknown or extended observations and rechecks the current episode before the
+sole allowed request:
+
+```python
+client.call('POST', '/v1/ask', {
+    'text': f'Christmas prop {prop} revision {revision}',
+    'lang': 'en-US', 'speak': True,
+}, timeout=5.0)
+```
+
+`prop` can only be letter/star/bell/gift. The current revision and expected prop
+are independently checked by the native Protocol skill. Admission returns a
+small immediate Unix-socket acknowledgement before a potentially slow owner
+call, so the camera request is not held for network speech. Only one request
+may be pending. A held prop is consumed once; exchanging a letter for the next
+expected star immediately re-arms detection. Repeating the same held prop does
+not re-arm on heartbeat/revision changes. If Voice is unavailable, remove and
+present the prop again or use its normal voice opening command.
+
+### Explicit photo actions and preview contract
+
+The native Protocol producer emits optional `photo_action` values
+none/capture/save/discard at the keepsake scene. A capture/retake advances the
+state revision and records `photo_capture_revision` equal to that action's
+revision. Save/discard retain that capture identity. Generic hints/repeats clear
+the action to none without requesting another capture.
+
+`PhotoBooth` holds the preview JPEG only in memory. Countdown begins only with
+fresh listening evidence and is sampled at the existing worker interval, so
+capture occurs on the next available frame after at least three seconds.
+Frame materialization and publication recheck episode/revision/capture identity.
+A save commits bytes only when their in-memory `preview_capture_revision`
+exactly matches the native capture target. Skipping a retake revision while
+polling can therefore never save an older photo. A restart cannot save a lost
+preview. Exit, off, stale state, pause and discard release uncommitted bytes.
+
+`Print.printJson('christmas_photo', payload)` is validated by
+[node_helper.js](../node_helper.js) before the [frontend](../MMM-Face-Reco-DNN.js)
+forwards `CHRISTMAS_PHOTO_STATUS`. Payload keys are version/revision/status,
+optional capture_revision, countdown-only seconds (1-3), and preview-only image
+(base64 JPEG). Status is countdown/preview/saved/discarded/unavailable. JPEG
+bytes are capped at 500000 and the entire public event below 700000 bytes.
+No filename, label, gallery data, transcript or control credential is sent.
+The [Christmas renderer](../../MMM-Thalovant-ChristmasProtocol/docs/index.md)
+checks the known sender and current action/capture revision before showing it.
+
+[Camera/gateway regressions](../tests/test_experience_camera.py),
+[worker ownership checks](../tests/test_runtime.py), and
+[helper/frontend tests](../tests/test_node_helper.cjs) cover the implementation
+with synthetic pixels, fake clocks and stub owner clients. No physical room
+acceptance or current-device activation is claimed.

@@ -9,6 +9,7 @@ import signal
 import sys
 import threading
 import time
+import uuid
 from types import FrameType
 from typing import Any, Callable
 
@@ -21,6 +22,8 @@ import numpy as np
 
 from tools.utils.arguments import Arguments
 from tools.utils.camera import CameraStream
+from tools.utils.experience_camera import ExperiencePropScanner, PhotoBooth
+from tools.utils.letter_marker import LetterScanner
 from tools.utils.print import Print
 from tools.utils.vision import (
     Detection,
@@ -205,6 +208,15 @@ def run(settings: dict[str, Any]) -> int:
     activation_generation = 0
     previous_generation = 0
     reported_ready_generation = None
+    presence_epoch = uuid.uuid4().hex
+    presence_sequence = 0
+    letter_scanner = LetterScanner()
+    experience_scanner = ExperiencePropScanner()
+    photo_directory = settings.get("christmasPhotoDirectory")
+    photo_booth = PhotoBooth(
+        Print.printJson,
+        directory=Path(photo_directory) if photo_directory else None,
+    )
 
     def reset_ready() -> None:
         """Require a new processed-frame readiness event after a command change."""
@@ -223,6 +235,7 @@ def run(settings: dict[str, Any]) -> int:
         while not closed.is_set():
             started = time.monotonic()
             if not active.is_set():
+                photo_booth.reset()
                 reported_ready_generation = None
                 if running:
                     camera.stop()
@@ -242,6 +255,7 @@ def run(settings: dict[str, Any]) -> int:
                 previous = []
                 previous_generation = frame_generation
             with camera.capture() as captured:
+                observed_at = time.time()
                 result = engine.recognize(captured.processing_frame)
                 identities_settled = True
                 if settings.get("cameraAutofocus") == "face":
@@ -255,6 +269,22 @@ def run(settings: dict[str, Any]) -> int:
                     and frame_generation == activation_generation
                 )
                 names = result.names
+                presence_sequence += 1
+                # Fresh inference metadata only: no image, geometry, confidence,
+                # gallery or cached login state is exported to other modules.
+                Print.printJson(
+                    "presence",
+                    {
+                        "version": 1,
+                        "epoch": presence_epoch,
+                        "sequence": presence_sequence,
+                        "observed_at": observed_at,
+                        "available": identities_settled and len(result.matches) <= 8,
+                        "labels": [match.name for match in result.matches]
+                        if identities_settled and len(result.matches) <= 8
+                        else [],
+                    },
+                )
                 logins = (
                     [name for name in names if name not in previous]
                     if identities_settled
@@ -291,6 +321,10 @@ def run(settings: dict[str, Any]) -> int:
                     Print.printJson("logout", {"names": logouts})
                 if identities_settled:
                     previous = names
+                if active.is_set() and not closed.is_set():
+                    letter_scanner.scan(captured.full_frame, observed_at, started)
+                    experience_scanner.scan(captured.full_frame, observed_at, started)
+                    photo_booth.process_frame(captured.full_frame, observed_at, started)
             if (
                 active.is_set()
                 and frame_generation == activation_generation
@@ -304,6 +338,7 @@ def run(settings: dict[str, Any]) -> int:
                 max(0.0, settings["interval"] / 1000 - (time.monotonic() - started))
             )
     finally:
+        photo_booth.reset()
         camera.close()
         if settings["output"]:
             cv2.destroyAllWindows()

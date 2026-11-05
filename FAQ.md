@@ -1,4 +1,4 @@
-Last Edit: Codex - 2026-11-02 - Motive: Document advertised camera controls and tested worker/session recovery.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Record live Christmas experience 2.3.0 activation.
 
 # FAQ
 
@@ -43,3 +43,57 @@ External pause immediately clears stale sessions and preview, and the helper dis
 ## Can an autofocus scan trigger a stranger greeting?
 
 Opt-in face AF defers new identity login/logout and dataset extension while the controller reports a pending scan or lens restoration. Detection and preview continue, and the existing identity is held only during the bounded transition. A no-face result cancels scanning and allows normal logout, so disappearance does not keep a ghost session. Timeout/failure requests restoration of a safe lens baseline and imposes a global 30-second failure cooldown, even if the ROI moves. Resume waits for a fresh frame confirming the seed. If restoration metadata is missing or wrong after two seconds while a face is present, the worker faults instead of classifying the unverified input. Tests cover known face → blurred unknown during scan → settled known face without an intervening guest greeting. This remains personalization, not authentication.
+
+## Can another module tell who is present right now without stale login sessions?
+
+Use `FACE_RECOGNITION_PRESENCE`, emitted by [the Face frontend](MMM-Face-Reco-DNN.js) from the separately validated per-inference snapshots in [the helper](node_helper.js). Do not treat `USERS_LOGIN`, cached users or delayed logout as current-frame evidence. The [fresh-presence contract](docs/index.md#fresh-presence-contract) uses a new random worker epoch, positive increasing sequence and capture-enter wall timestamp. An empty settled frame has `available:true, labels:[]`; an unsettled focus transition or more than eight matches has `available:false, labels:[]`. Two same-label matches remain two entries. A paused or failed worker may send nothing; consumers need their own short expiry.
+
+## Does the presence signal authorize an action or identify a child profile?
+
+No. It contains bounded match labels only and does not create any authentication mapping. It carries no image, gallery, face coordinates or confidence values. A separate explicitly enabled consumer may use a private exact-label allowlist for a cosmetic greeting, with its own freshness, stability and cooldown checks. Voice actions still require their existing authenticated connection. The Face module does not turn observed labels into commands, speech or permissions.
+
+## How should I hold the North Pole stamp?
+
+Arm the lost-letter rehearsal, then hold the printed square still and flat
+toward the camera. Keep its white border clear. Lower the prop for a beat
+between takes so `LetterScanner.scan()` observes two empty samples.
+[Scanner implementation](tools/utils/letter_marker.py)
+
+## How do I use a physical Christmas prop?
+
+Print one of the fixed stamps LETTER/STAR/BELL/GIFT with the QR contents
+`THALOVANT:PROP:LETTER`, `THALOVANT:PROP:STAR`, `THALOVANT:PROP:BELL`, or
+`THALOVANT:PROP:GIFT`. Hold the currently requested prop toward the camera.
+The active episode and revision authorize its effect; arbitrary QR text is
+ignored. [Scanner and PhotoBooth](tools/utils/experience_camera.py) reuse the
+existing camera request. [Gateway setup](docs/index.md#christmas-props-and-keepsakes-230)
+requires the owner Voice service and shared socket mount. Voice commands remain
+available when a printed stamp cannot be read.
+
+## Does the keepsake flow save photos automatically?
+
+No. “Take Christmas photo” starts a quiet countdown and an in-memory preview.
+Only “save Christmas photo” writes that exact preview into the private configured
+photo folder. Retake replaces it; discard, exit, Protocol off, worker pause and
+stale state release uncommitted bytes. The saved photo is not face enrollment.
+An old preview cannot satisfy a save for a newer capture revision. A worker
+restart loses its unsaved preview and asks for another capture rather than
+silently taking or saving a replacement.
+
+## Why did the photo say unavailable?
+
+There may be no preview for the current capture revision, the scene may have
+changed during capture, encoding may have failed, or the photo destination may
+not be an owned private absolute directory. Retake while the keepsake scene is
+active; configure a persistent writable photo mount for saves. Camera calibration
+is not changed by the feature. See [photo contract](docs/index.md#explicit-photo-actions-and-preview-contract)
+and [regressions](tests/test_experience_camera.py).
+
+## Is the connected experience installed on the mirror?
+
+The coordinated release was activated on mm01 on 2026-11-05. Use the configured
+wake phrase with “start Christmas family adventure”. Camera props need the
+matching printed card at the requested step; saving a keepsake is explicit.
+Use “pause Christmas adventure” or “disable Christmas Protocol” for quiet.
+The final deployment evidence distinguishes observed player state from
+physical hearing/recognition.

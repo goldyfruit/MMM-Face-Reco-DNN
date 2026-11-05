@@ -66,6 +66,8 @@ Module.register('MMM-Face-Reco-DNN', {
     workerRestartDelay: 1000,
     workerRestartLimit: 3,
     previewQuality: 95,
+    // Explicit Christmas keepsakes only; preview stays in memory until save.
+    christmasPhotoDirectory: null,
     // how fast in ms should the modules hide and show (face effect)
     animationSpeed: 0,
     // Path to Python to run the face recognition (null / '' means default path)
@@ -487,6 +489,15 @@ Module.register('MMM-Face-Reco-DNN', {
 
   socketNotificationReceived: function (notification, payload) {
     if (!payload || typeof payload !== 'object') return;
+    if (notification === 'christmas_photo') {
+      this.sendNotification('CHRISTMAS_PHOTO_STATUS', payload);
+      return;
+    }
+    if (notification === 'presence') {
+      // Separate fresh-frame signal; cached login sessions retain their legacy UX.
+      this.sendNotification('FACE_RECOGNITION_PRESENCE', payload);
+      return;
+    }
     if (notification === 'worker_state') {
       this.workerAvailable = payload.available === true;
       if (!this.workerAvailable) this.reset_sessions();

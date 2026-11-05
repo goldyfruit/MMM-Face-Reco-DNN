@@ -1,4 +1,4 @@
-Last Edit: Codex - 2026-11-02 - Motive: Document advertised camera controls and tested worker/session recovery.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add expected Christmas prop observations and explicit memory-only keepsake previews.
 
 # MMM-Face-Reco-DNN — CPU/ISP performance fork
 
@@ -49,3 +49,35 @@ If the Python worker fails or closes, the mirror immediately clears stale face s
 Optional `cameraAutofocus:'face'` targets autofocus at detected face windows instead of the camera's default metering region in a reflective scene. It begins at a supported manual seed (`cameraLensPosition`, or 1.0 dioptre), uses bounded windowed scans and retains a safe lens baseline when no usable face/window control is available. Face selection uses detected geometry, never a person's identity. During a scan/restoration transition, detection and preview continue while identity changes and dataset extension wait for settled frames; disappearance still permits normal logout. This is opt-in and requires local focus/recognition validation.
 
 Face AF verifies the manual seed from a fresh frame before scanning, bounds each scan to six seconds and applies a global 30-second failure cooldown. Restoration must be confirmed by lens metadata; an unverified restoration after two seconds faults while faces are present. Physical face-window AF validation is pending.
+
+## 2.2.1 fresh presence metadata
+
+[Recognition worker `run`](tools/recognition.py) now emits a separate `presence` snapshot after each inference; [the helper](node_helper.js) validates it and [the frontend](MMM-Face-Reco-DNN.js) publishes `FACE_RECOGNITION_PRESENCE`. Its exact six fields are `version`, `epoch`, `sequence`, `observed_at`, `available` and `labels`. Labels represent current matches, preserving duplicates so two faces with the same label remain a group. They are separate from cached login/logout sessions and their disappearance delay.
+
+The observation timestamp is taken when a capture becomes available, before recognition, so slow processing cannot make an old frame appear newly observed. Consumers must enforce timestamp freshness and stable presence themselves; missing signals after pause or worker failure are not proof that anyone remains present. No pixels, face coordinates, scores, gallery contents, spoken commands or authentication grants are added to this signal. Recognition remains personalization, not authentication. Optional Santa greeting integration is explicitly enabled in its separate Christmas module; this Face module does not select profiles or speak names.
+
+Validation for this release: 217 Python tests under Python 3.13.11, all 23 Node helper/frontend tests, JavaScript lint and targeted Python lint/format checks pass. Tests use synthetic frames, identities and fake clocks; no camera or private gallery was read for this change. See [the contract](docs/index.md#fresh-presence-contract) and [audit](AUDIT.md).
+
+## 2.3.0 Christmas props and requested keepsakes
+
+The existing camera worker can recognize four printed Christmas Protocol stamps:
+`THALOVANT:PROP:LETTER`, `THALOVANT:PROP:STAR`, `THALOVANT:PROP:BELL`, and
+`THALOVANT:PROP:GIFT`. It scans only the prop the active authenticated experience
+expects. Voice alternatives remain available. The source-owned
+[`experience_gateway.py`](tools/experience_gateway.py) admits revision-bound
+metadata to the existing owner-authorized Thalovant Voice control client; no
+new camera handle or arbitrary-command receiver is introduced.
+
+At the keepsake scene, say “take Christmas photo”, then “save Christmas photo”,
+“discard Christmas photo”, or “retake Christmas photo”. French uses “prends la
+photo de Noël”, “garde la photo de Noël”, “supprime la photo de Noël”, or
+“reprends la photo de Noël”. A minimum three-second countdown starts when Voice
+is quiet. The unannotated JPEG preview stays in memory until an explicit save.
+Save creates a private file in `christmasPhotoDirectory`, or the worker user's
+`~/.local/share/thalovant/christmas-photos` by default. A container needs a
+persistent writeable mount there. The saved image is separate from enrollment.
+
+[Setup and fixed gateway](docs/index.md#christmas-props-and-keepsakes-230)
+describes mount paths, UID ownership and the current-action/capture-revision
+contract. Local tests use synthetic pixels; no physical camera or family photo
+was used during implementation.
