@@ -498,8 +498,10 @@ test('fresh presence is bounded and forwarded independently from cached login st
 test('explicit Christmas keepsake statuses are bounded and separate from face preview', () => {
   const { helper, shells, notifications, logs } = setup();
   helper.config.christmasPhotoDirectory = '/private/keepsakes';
+  helper.config.christmasPhotoTimezone = 'Europe/Paris';
   helper.python_start();
   assert.ok(shells[0].options.args.includes('--christmasPhotoDirectory=/private/keepsakes'));
+  assert.ok(shells[0].options.args.includes('--christmasPhotoTimezone=Europe/Paris'));
   const image = Buffer.from([255, 216, 255, 217]).toString('base64');
   const value = { version: 1, revision: 7, capture_revision: 6, status: 'preview', image };
   shells[0].message({ christmas_photo: value });

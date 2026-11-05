@@ -68,6 +68,7 @@ Module.register('MMM-Face-Reco-DNN', {
     previewQuality: 95,
     // Explicit Christmas keepsakes only; preview stays in memory until save.
     christmasPhotoDirectory: null,
+    christmasPhotoTimezone: 'America/Toronto',
     // how fast in ms should the modules hide and show (face effect)
     animationSpeed: 0,
     // Path to Python to run the face recognition (null / '' means default path)

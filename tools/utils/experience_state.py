@@ -40,6 +40,8 @@ class ExperienceView:
     photo_action: str
     photo_capture_revision: int
     listening: bool
+    lang: str = "en-US"
+    photo_style: str = "plain"
 
 
 def experience_view(state_file: Path, now: float) -> ExperienceView | None:
@@ -76,6 +78,13 @@ def experience_view(state_file: Path, now: float) -> ExperienceView | None:
         or state.get("status") not in ("clue", "completed")
     ):
         return None
+    lang = state.get("lang", "en-US")
+    if (
+        not isinstance(lang, str)
+        or len(lang) > 64
+        or not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", lang)
+    ):
+        return None
     metadata, profile = state.get("experience"), state.get("profile")
     revision, hunt = state.get("revision"), state.get("hunt_id")
     if (
@@ -106,6 +115,8 @@ def experience_view(state_file: Path, now: float) -> ExperienceView | None:
         or metadata.get("expected_prop") not in (*PROPS, None)
         or metadata.get("photo_action", "none")
         not in ("none", "capture", "save", "discard")
+        or metadata.get("photo_style", "plain") not in ("plain", "postcard")
+        or ("photo_style" in metadata and metadata["stage"] != "keepsake")
         or (
             metadata.get("photo_action", "none") != "none"
             and metadata["stage"] != "keepsake"
@@ -135,4 +146,6 @@ def experience_view(state_file: Path, now: float) -> ExperienceView | None:
         metadata.get("photo_action", "none"),
         metadata.get("photo_capture_revision", 0),
         envelope.get("voiceState") == "listening",
+        lang,
+        metadata.get("photo_style", "plain"),
     )

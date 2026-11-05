@@ -1,6 +1,48 @@
-Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Record live Christmas experience 2.3.0 activation.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add opt-in dated North Pole postcards with unchanged explicit photo consent.
 
 # Maintenance log —2026-11-02
+
+## 2026-11-05 — Opt-in North Pole postcards (2.4.0 source)
+
+Added [render_postcard](tools/utils/postcard.py), an OpenCV/NumPy-only ivory,
+evergreen and gold frame with original vector postal artwork, English/French
+caption and trusted local capture date. [PhotoBooth.process_frame](tools/utils/experience_camera.py)
+renders only an explicit postcard capture, encodes once, and keeps the same
+JPEG bytes for preview and explicit save. Plain-photo encoding remains on its
+existing path. The optional source `photo_style` defaults to plain and is bound
+to the capture revision; changing style cannot reframe or save older pixels.
+The existing shared camera callback, Voice gate, private storage and enrollment
+boundaries are preserved. `christmasPhotoTimezone` defaults to America/Toronto
+and validates installed IANA names through stdlib ZoneInfo.
+
+Verification: 307 Python tests pass on Python 3.13.11, OpenCV 4.10.0 and NumPy
+2.2.4; 91% overall coverage and 100% compositor coverage. All 25 Node tests,
+ESLint, CI-pinned Ruff 0.12.4 format checks, targeted Python lint and whitespace
+checks pass. [Compositor tests](tests/test_postcard.py) cover full-image retention,
+French accent, dimensions and local midnight; [PhotoBooth regressions](tests/test_experience_camera.py)
+cover byte-identical save, style/countdown races, legacy defaults, retake back to
+the unchanged plain encoding, and unavailable timezone behavior. English/French
+synthetic previews received visual review. Package and lockfile agree on 2.4.0.
+No physical camera/photo, face gallery, live service, commit, push or deployment
+was used for this source change. The user's `docs/performance.md` edit is intact.
+
+Final review reproduced a startup replay: a fresh worker observing an old
+persisted capture with fresh heartbeats performed a new countdown and preview.
+Added a startup observation guard to consume that action as unavailable without
+pixels. A later explicit revision captures normally, and a prior ready/off scene
+arms normal capture. Four regressions cover restart, heartbeat/reset suppression
+and normal readiness; the final complete suite is 307 Python / 25 Node tests.
+
+### Transparency Report — postcard polish
+
+- **AI model:** Codex (GPT-6).
+- **Actions taken:** Implemented the opt-in compositor, strict locale/style gate,
+  capture-style guards, private timezone config, tests, version and documentation.
+- **Oversight:** User approved postcard polish; parent agent reviewed the EN/FR
+  synthetic design. Source and automated tests were checked locally. Physical
+  photo acceptance and release/deployment are separate coordinated work.
+
+## 2026-11-02 — Base fork
 
 Forked upstream d7f01321d919140c049ee55094f46837de0bb668. Added optional YuNet and an ISP lores camera path, lazy same-frame main images, cached validated gallery matching and no-op preprocessing. Fixed cross-face score labels, annotation contamination, ambiguous multi-face enrollment, failed enrollment replacement and worker lifecycle cleanup.
 

@@ -216,6 +216,7 @@ def run(settings: dict[str, Any]) -> int:
     photo_booth = PhotoBooth(
         Print.printJson,
         directory=Path(photo_directory) if photo_directory else None,
+        timezone=settings.get("christmasPhotoTimezone", "America/Toronto"),
     )
 
     def reset_ready() -> None:

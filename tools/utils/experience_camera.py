@@ -12,6 +12,7 @@ import stat
 from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
+from zoneinfo import ZoneInfoNotFoundError
 
 import cv2
 import numpy as np
@@ -26,6 +27,7 @@ from tools.utils.experience_state import (
     experience_view,
     fresh as fresh,
 )
+from tools.utils.postcard import render_postcard
 
 MAX_PHOTO_BYTES = 500000
 MAX_PUBLIC_PHOTO_BYTES = 700000
@@ -133,9 +135,11 @@ class PhotoBooth:
         emit: Callable[[str, dict[str, Any]], None],
         state_file: Path = STATE_FILE,
         directory: Path | None = None,
+        timezone: str = "America/Toronto",
     ) -> None:
         """Configure public input/output without opening a camera or creating files."""
         self.emit, self.state_file = emit, state_file
+        self.timezone = timezone
         self.directory = (
             directory or Path.home() / ".local/share/thalovant/christmas-photos"
         )
@@ -144,12 +148,15 @@ class PhotoBooth:
         self.revision = 0
         self.capture_revision = 0
         self.preview_capture_revision = 0
+        self.preview_style: str | None = None
+        self._capture_style = "plain"
         self._seen_revision = -1
         self._action = "none"
         self._started: float | None = None
         self._last_status: tuple[int, str, int | None] | None = None
         self._filename: str | None = None
         self._consumed: dict[tuple[Any, ...], None] = {}
+        self._observed_state = False
 
     def _status(self, status: str, seconds: int | None = None) -> None:
         """Publish one bounded status transition; only previews carry image bytes."""
@@ -176,6 +183,7 @@ class PhotoBooth:
         had_preview = self.preview is not None or self._started is not None
         self.preview = None
         self.preview_capture_revision = 0
+        self.preview_style = None
         self._filename = None
         self._started = None
         self._action = "none"
@@ -188,6 +196,8 @@ class PhotoBooth:
         self, frame: Callable[[], np.ndarray], observed_at: float, monotonic: float
     ) -> None:
         """Call the shared lazy full frame exactly once after an explicit countdown."""
+        first_observation = not self._observed_state
+        self._observed_state = True
         view = experience_view(self.state_file, observed_at)
         if view is None or view.stage != "keepsake":
             self.reset()
@@ -200,13 +210,14 @@ class PhotoBooth:
             return
         self.revision = view.revision
         self.capture_revision = view.photo_capture_revision
-        mismatched_preview = (
-            self.preview is not None
-            and self.preview_capture_revision != view.photo_capture_revision
+        mismatched_preview = self.preview is not None and (
+            self.preview_capture_revision != view.photo_capture_revision
+            or self.preview_style != view.photo_style
         )
         if mismatched_preview:
             self.preview = None
             self.preview_capture_revision = 0
+            self.preview_style = None
             self._filename = None
         if view.revision != self._seen_revision:
             self._seen_revision = view.revision
@@ -220,12 +231,22 @@ class PhotoBooth:
             self._action = view.photo_action
             self._started = None
             if view.photo_action == "capture":
+                self._capture_style = view.photo_style
                 self.preview = None
                 self.preview_capture_revision = 0
+                self.preview_style = None
                 self._filename = None
+                if first_observation:
+                    # Fresh heartbeats cannot distinguish a persisted old capture
+                    # from a request made before this worker became ready. Consume
+                    # it without pixels; only a new explicit retake can capture.
+                    self._action = "none"
+                    self._status("unavailable")
+                    return
             elif view.photo_action == "discard":
                 self.preview = None
                 self.preview_capture_revision = 0
+                self.preview_style = None
                 self._filename = None
                 self._status("unavailable" if mismatched_preview else "discarded")
             elif view.photo_action == "save":
@@ -240,6 +261,9 @@ class PhotoBooth:
                 self._status("preview")
         if self._action != "capture":
             return
+        if view.photo_style != self._capture_style:
+            self.reset()
+            return
         if not view.listening:
             self._started = None
             return
@@ -253,6 +277,8 @@ class PhotoBooth:
         self._started = None
         try:
             pixels = frame()
+            if view.photo_style == "postcard":
+                pixels = render_postcard(pixels, view.lang, observed_at, self.timezone)
             height, width = pixels.shape[:2]
             if max(height, width) > 1200:
                 scale = 1200 / max(height, width)
@@ -274,18 +300,28 @@ class PhotoBooth:
                         or not current.listening
                         or current.photo_action != "capture"
                         or current.photo_capture_revision != view.photo_capture_revision
+                        or current.photo_style != view.photo_style
                     ):
                         self.reset()
                         return
                     self.preview = encoded.tobytes()
                     self.preview_capture_revision = view.photo_capture_revision
+                    self.preview_style = view.photo_style
                     self._filename = "christmas-" + uuid4().hex + ".jpg"
                     self._status("preview")
                     return
-        except (AttributeError, TypeError, ValueError, RuntimeError, cv2.error):
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            RuntimeError,
+            ZoneInfoNotFoundError,
+            cv2.error,
+        ):
             pass
         self.preview = None
         self.preview_capture_revision = 0
+        self.preview_style = None
         self._status("unavailable")
 
     def _save(self) -> None:
@@ -325,6 +361,7 @@ class PhotoBooth:
             return
         self.preview = None
         self.preview_capture_revision = 0
+        self.preview_style = None
         self._filename = None
         self._action = "none"
         self._status("saved")

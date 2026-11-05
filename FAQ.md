@@ -1,6 +1,28 @@
-Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Record live Christmas experience 2.3.0 activation.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add opt-in dated North Pole postcards with unchanged explicit photo consent.
 
 # FAQ
+
+## How do I choose a North Pole postcard instead of a plain photo?
+
+At the active keepsake scene, say “take Christmas postcard” or “prends la carte
+postale de Noël”. Plain photo capture remains available. Both choices use the
+same countdown and in-memory preview; save/discard remain explicit. Choosing
+another style requires a new capture, so a save never silently decorates an
+older plain photo. [PhotoBooth](tools/utils/experience_camera.py) binds the
+preview to its capture revision and style. The native skill and display bridge
+need matching optional `photo_style` support; an older state defaults to plain.
+
+## Which date and language appear on the postcard?
+
+[render_postcard](tools/utils/postcard.py) uses the original capture timestamp
+in `christmasPhotoTimezone` (default `America/Toronto`), not the save date or
+host timezone. Source locales beginning with `fr`, including `fr-CA`, use
+`PÔLE NORD` and day/month/year; others use English and year/month/day. The
+existing OpenCV renderer draws the French accent directly, without a new font
+dependency. A configured IANA zone must exist in the system timezone database.
+The composed image stays in memory until explicit save, which writes exactly
+the previewed bytes. See [the postcard setup](docs/index.md#optional-north-pole-postcard)
+and [fixed-date tests](tests/test_postcard.py).
 
 ## Must I regenerate my face gallery?
 No. `RecognitionEngine` uses the same dlib128 descriptor format and `FaceMatcher` accepts the existing names/encodings structure. Back it up first; this fork does not silently re-encode it.
@@ -79,6 +101,12 @@ stale state release uncommitted bytes. The saved photo is not face enrollment.
 An old preview cannot satisfy a save for a newer capture revision. A worker
 restart loses its unsaved preview and asks for another capture rather than
 silently taking or saving a replacement.
+
+If a new camera worker first sees an already-pending capture, it marks that
+revision unavailable and suppresses its heartbeats. Use a fresh retake after
+the camera is ready. An old persisted action is not treated as a new request.
+[`test_worker_restart_consumes_persisted_capture_until_new_explicit_retake`](tests/test_experience_camera.py)
+also checks that a reset cannot revive the blocked action.
 
 ## Why did the photo say unavailable?
 

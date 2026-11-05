@@ -60,7 +60,11 @@ function validChristmasPhoto(value) {
 
 function christmasPhotoArguments(config) {
   const directory = config.christmasPhotoDirectory;
-  return typeof directory === 'string' && directory.length > 0 ? ['--christmasPhotoDirectory=' + directory] : [];
+  const timezone = config.christmasPhotoTimezone;
+  return [
+    ...(typeof directory === 'string' && directory.length > 0 ? ['--christmasPhotoDirectory=' + directory] : []),
+    ...(typeof timezone === 'string' && timezone.length > 0 && timezone.length <= 128 ? ['--christmasPhotoTimezone=' + timezone] : []),
+  ];
 }
 
 module.exports = NodeHelper.create({
