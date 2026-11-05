@@ -295,11 +295,11 @@ def test_worker_restart_consumes_persisted_capture_until_new_explicit_retake(
     assert f.events[-1][1]["status"] == "preview"
 
 
-@pytest.mark.parametrize("ready", ["none", "off", "other-scene"])
+@pytest.mark.parametrize("ready", ["none", "other-scene"])
 def test_ready_observation_arms_a_later_explicit_capture(
     tmp_path: Path, ready: str
 ) -> None:
-    """A camera already observing a ready/off scene admits the next new photo turn."""
+    """A valid ready scene arms the next new photo turn before any pixels are read."""
     f = booth_fixture(tmp_path)
     restarted = PhotoBooth(
         lambda kind, value: f.events.append((kind, value)), f.path, f.directory
@@ -309,7 +309,7 @@ def test_ready_observation_arms_a_later_explicit_capture(
             f.path, revision=3, stage="letter", photo="none", capture_revision=0
         )
     else:
-        value = write_state(
+        write_state(
             f.path,
             revision=3,
             stage="keepsake",
@@ -317,9 +317,6 @@ def test_ready_observation_arms_a_later_explicit_capture(
             photo="none",
             capture_revision=0,
         )
-        if ready == "off":
-            value["state"]["protocol_enabled"] = False
-            f.path.write_text(json.dumps(value))
     restarted.process_frame(f.frame, 100, 0)
     assert not f.frame.called
     write_state(
@@ -328,6 +325,73 @@ def test_ready_observation_arms_a_later_explicit_capture(
     for second in range(4):
         restarted.process_frame(f.frame, 101 + second, 1 + second)
     assert f.frame.call_count == 1 and restarted.preview_capture_revision == 4
+    assert f.events[-1][1]["status"] == "preview"
+
+
+@pytest.mark.parametrize(
+    "unready",
+    [
+        "missing",
+        "malformed",
+        "disconnected",
+        "off",
+        "hidden",
+        "stale",
+        "stale-voice",
+        "missing-state",
+    ],
+)
+def test_unready_startup_cannot_arm_persisted_capture_after_reconnection(
+    tmp_path: Path, unready: str
+) -> None:
+    """Unusable/off input is not camera readiness or fresh permission to take pixels."""
+    f = booth_fixture(tmp_path)
+    restarted = PhotoBooth(
+        lambda kind, value: f.events.append((kind, value)), f.path, f.directory
+    )
+    value = write_state(
+        f.path, stage="keepsake", prop=None, photo="capture", style="postcard"
+    )
+    if unready == "missing":
+        f.path.unlink()
+    elif unready == "malformed":
+        f.path.write_text("{")
+    else:
+        if unready == "disconnected":
+            value["connected"] = False
+        elif unready == "off":
+            value["state"]["protocol_enabled"] = False
+        elif unready == "hidden":
+            value["presentation"] = {"provider": "christmas-games"}
+        elif unready == "stale":
+            value["updated_at"] = 0
+        elif unready == "stale-voice":
+            value["voiceUpdatedAt"] = 0
+        elif unready == "missing-state":
+            value["state"] = None
+        f.path.write_text(json.dumps(value))
+    restarted.process_frame(f.frame, 100, 0)
+    assert not f.frame.called
+    write_state(
+        f.path, stage="keepsake", prop=None, photo="capture", style="postcard", now=101
+    )
+    for second in range(4):
+        restarted.process_frame(f.frame, 101 + second, 1 + second)
+    assert not f.frame.called and restarted.preview is None
+    assert f.events[-1][1]["status"] == "unavailable"
+    write_state(
+        f.path,
+        revision=5,
+        capture_revision=5,
+        stage="keepsake",
+        prop=None,
+        photo="capture",
+        style="postcard",
+        now=106,
+    )
+    for second in range(4):
+        restarted.process_frame(f.frame, 106 + second, 6 + second)
+    assert f.frame.call_count == 1 and restarted.preview_capture_revision == 5
     assert f.events[-1][1]["status"] == "preview"
 
 

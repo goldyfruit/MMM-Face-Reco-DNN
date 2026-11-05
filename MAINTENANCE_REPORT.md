@@ -1,6 +1,32 @@
-Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add opt-in dated North Pole postcards with unchanged explicit photo consent.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Require a valid ready scene before arming photo capture after startup or reconnection.
 
 # Maintenance log —2026-11-02
+
+## 2026-11-05 — Startup readiness correction (2.4.1 source)
+
+After a synthetic reproduction of disconnected startup followed by an old
+persisted capture, [PhotoBooth.process_frame](tools/utils/experience_camera.py)
+now marks readiness only after a valid active `ExperienceView`. None/off/stale
+or hidden views no longer arm a later capture. The first valid already-pending
+capture remains unavailable until a new explicit retake. No public wire fields,
+photo store, gateway behavior or camera calibration were changed.
+
+Verification: all 314 Python tests (91% overall coverage), 25 Node tests,
+JavaScript lint, Ruff 0.12.4 format checks and targeted Python lint pass.
+Eight invalid-startup cases exercise reconnect rejection and a later successful
+retake; two valid-ready cases retain normal capture. Package/lock version is
+2.4.1. Work is on `fix/postcard-startup-ready` from origin/dev 02557d9; no commit,
+push or deployment by this correction. The pre-existing performance doc edit
+remains untouched.
+
+### Transparency Report — valid startup readiness
+
+- **AI model:** Codex (GPT-6).
+- **Actions:** Reproduced the startup gap, moved the readiness gate behind valid
+  state admission, added regression tests and updated version/documentation.
+- **Oversight:** Parent agent identified the concrete reconnection path; user
+  authorized the postcard feature. Automated synthetic verification completed;
+  no live camera, saved image, native action or service intervention used.
 
 ## 2026-11-05 — Opt-in North Pole postcards (2.4.0 source)
 

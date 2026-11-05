@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add opt-in dated North Pole postcards with unchanged explicit photo consent.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Require a valid ready scene before arming photo capture after startup or reconnection.
 
 # FAQ
 
@@ -109,6 +109,14 @@ the camera is ready. An old persisted action is not treated as a new request.
 also checks that a reset cannot revive the blocked action.
 
 ## Why did the photo say unavailable?
+
+Version 2.4.1 deliberately treats startup/reconnection as unready until a valid
+active scene is observed. Missing, malformed, disconnected, off, stale and
+presentation-hidden input cannot arm the camera. If its first valid view is an
+already-pending capture, use a fresh retake. A worker that already observed a
+valid non-capture scene admits the next explicit request normally. See
+`test_unready_startup_cannot_arm_persisted_capture_after_reconnection` in
+[PhotoBooth tests](tests/test_experience_camera.py).
 
 There may be no preview for the current capture revision, the scene may have
 changed during capture, encoding may have failed, or the photo destination may

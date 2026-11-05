@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add opt-in dated North Pole postcards with unchanged explicit photo consent.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Require a valid ready scene before arming photo capture after startup or reconnection.
 
 # Installation and configuration
 
@@ -167,8 +167,9 @@ preview. Exit, off, stale state, pause and discard release uncommitted bytes.
 A new worker's first observed action may be an old persisted capture with fresh
 bridge heartbeats. `PhotoBooth.process_frame()` consumes that revision and emits
 unavailable without requesting pixels. Repeated heartbeats and reset cannot
-revive it; a new explicit capture revision is required. Observing a ready
-non-capture scene or off state first arms ordinary future capture. This guard
+revive it; a new explicit capture revision is required. Only observing a valid active
+non-capture scene first arms ordinary future capture. Missing, malformed, off,
+disconnected, stale or presentation-hidden input never establishes readiness. This guard
 does not create a durable photo store or recover lost preview bytes.
 
 `Print.printJson('christmas_photo', payload)` is validated by
