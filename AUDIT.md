@@ -1,6 +1,48 @@
-Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Record live Christmas experience 2.3.0 activation.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add opt-in dated North Pole postcards with unchanged explicit photo consent.
 
 # Evidence-based audit
+
+## 2026-11-05 — Postcard consent and capture consistency (2.4.0 source)
+
+[PhotoBooth.process_frame](tools/utils/experience_camera.py) consumes the optional
+keepsake-only `photo_style` enum from [ExperienceView](tools/utils/experience_state.py).
+Absent style preserves plain capture. Explicit postcard capture creates a new
+preview and records its style alongside the capture revision. Save requires
+that preview's current identity, capture revision and style; no save-time
+decoration or date recalculation occurs. Same-revision style changes during the
+countdown and conflicting source state during encoding discard the result.
+Existing freshness/listening, replay, episode and private filesystem guards
+remain in force. Tests use synthetic frames only.
+
+The [compositor](tools/utils/postcard.py) copies the complete resized photo into
+an added mat and never draws into the shared camera frame. It runs once per
+explicit postcard capture, uses only existing OpenCV/NumPy plus stdlib ZoneInfo,
+and stays within the existing image/event budgets. `fr` locale prefixes render
+the authored French caption with a vector Ô; other well-formed source locales
+use English. The date is derived from the trusted camera observation timestamp
+and configured IANA zone, never an untrusted public date string.
+
+Evidence: 307 Python tests pass (91% overall, compositor 100%), 25 Node tests,
+ESLint, Ruff 0.12.4 formatting, targeted lint and diff checks. Specific regressions
+are `test_opt_in_postcard_is_frozen_preview_and_exact_explicit_save`,
+`test_style_cannot_reframe_old_capture_or_save_mismatched_preview` and
+`test_postcard_to_plain_retake_uses_new_revision_and_original_photo_shape` in
+[photo tests](tests/test_experience_camera.py), and local midnight/circumflex
+checks in [postcard tests](tests/test_postcard.py). System IANA timezone data is
+required; argument validation rejects unavailable zones. No physical photo
+quality, exposure, Pi timing or new live activation is claimed by these checks.
+The existing `docs/performance.md` user change remains untouched.
+
+Final source review reproduced a restart replay using a synthetic persisted
+capture: a new worker emitted countdown and preview with one borrowed frame
+without a new native action. `PhotoBooth.process_frame()` now consumes an
+already-pending capture on its first observation and emits unavailable with no
+pixels. Same-revision heartbeats and reset remain blocked; a new explicit
+capture revision is accepted. A prior ready/non-capture or off observation arms
+normal capture. `test_worker_restart_consumes_persisted_capture_until_new_explicit_retake`
+and `test_ready_observation_arms_a_later_explicit_capture` in
+[photo tests](tests/test_experience_camera.py) verify the guard. All 307 Python
+and 25 Node tests pass after this correction; formatting and lint pass.
 
 ## Fixed with tests
 

@@ -29,6 +29,8 @@ def write_state(
     voice: str = "listening",
     now: float = 100,
     capture_revision: int = 4,
+    style: str | None = None,
+    lang: str = "en-US",
 ) -> dict:
     """Create only synthetic public episode data and fresh Voice evidence."""
     value = {
@@ -44,6 +46,7 @@ def write_state(
             "status": "clue",
             "protocol_enabled": True,
             "revision": revision,
+            "lang": lang,
             "profile": {"id": "experience-family", "display_name": "Family"},
             "experience": {
                 "version": 1,
@@ -58,6 +61,8 @@ def write_state(
             },
         },
     }
+    if style is not None:
+        value["state"]["experience"]["photo_style"] = style
     path.write_text(json.dumps(value))
     return value
 
@@ -118,6 +123,9 @@ def test_off_unrelated_or_malformed_state_never_borrows_pixels(
         ("chapter", True),
         ("version", True),
         ("photo_action", "upload"),
+        ("photo_style", "upload"),
+        ("photo_style", None),
+        ("photo_style", []),
     ],
 )
 def test_invalid_nested_metadata_fails_quietly(
@@ -189,6 +197,18 @@ def booth_fixture(tmp_path: Path, *, voice: str = "listening") -> SimpleNamespac
         lambda kind, value: events.append((kind, value)), path, tmp_path / "photos"
     )
     frame = Mock(return_value=pixels())
+    # A normally running camera observes the ready scene before a new request.
+    write_state(
+        path,
+        revision=3,
+        stage="keepsake",
+        prop=None,
+        photo="none",
+        capture_revision=0,
+        voice=voice,
+    )
+    booth.process_frame(frame, 100, 0)
+    write_state(path, stage="keepsake", prop=None, photo="capture", voice=voice)
     return SimpleNamespace(
         path=path,
         events=events,
@@ -237,6 +257,243 @@ def test_photo_countdown_preview_in_memory_and_explicit_private_save(
     assert f.booth.preview is None
     f.booth.process_frame(f.frame, 106, 6)
     assert len(list(f.directory.iterdir())) == 1
+
+
+def test_worker_restart_consumes_persisted_capture_until_new_explicit_retake(
+    tmp_path: Path,
+) -> None:
+    """A new worker cannot replay an old capture just because its heartbeat is fresh."""
+    f = booth_fixture(tmp_path)
+    restarted = PhotoBooth(
+        lambda kind, value: f.events.append((kind, value)), f.path, f.directory
+    )
+    for second in range(4):
+        restarted.process_frame(f.frame, 100 + second, second)
+    assert f.events[-1][1] == {
+        "version": 1,
+        "revision": 4,
+        "capture_revision": 4,
+        "status": "unavailable",
+    }
+    assert len(f.events) == 1 and not f.frame.called and restarted.preview is None
+    assert not f.directory.exists()
+    restarted.reset()
+    restarted.process_frame(f.frame, 104, 4)
+    assert not f.frame.called
+    write_state(
+        f.path,
+        revision=5,
+        capture_revision=5,
+        stage="keepsake",
+        prop=None,
+        photo="capture",
+        now=105,
+    )
+    for second in range(4):
+        restarted.process_frame(f.frame, 105 + second, 5 + second)
+    assert f.frame.call_count == 1 and restarted.preview_capture_revision == 5
+    assert f.events[-1][1]["status"] == "preview"
+
+
+@pytest.mark.parametrize("ready", ["none", "off", "other-scene"])
+def test_ready_observation_arms_a_later_explicit_capture(
+    tmp_path: Path, ready: str
+) -> None:
+    """A camera already observing a ready/off scene admits the next new photo turn."""
+    f = booth_fixture(tmp_path)
+    restarted = PhotoBooth(
+        lambda kind, value: f.events.append((kind, value)), f.path, f.directory
+    )
+    if ready == "other-scene":
+        write_state(
+            f.path, revision=3, stage="letter", photo="none", capture_revision=0
+        )
+    else:
+        value = write_state(
+            f.path,
+            revision=3,
+            stage="keepsake",
+            prop=None,
+            photo="none",
+            capture_revision=0,
+        )
+        if ready == "off":
+            value["state"]["protocol_enabled"] = False
+            f.path.write_text(json.dumps(value))
+    restarted.process_frame(f.frame, 100, 0)
+    assert not f.frame.called
+    write_state(
+        f.path, revision=4, stage="keepsake", prop=None, photo="capture", now=101
+    )
+    for second in range(4):
+        restarted.process_frame(f.frame, 101 + second, 1 + second)
+    assert f.frame.call_count == 1 and restarted.preview_capture_revision == 4
+    assert f.events[-1][1]["status"] == "preview"
+
+
+@pytest.mark.parametrize("lang", ["en-US", "fr-FR", "en-CA", "fr-CA"])
+def test_opt_in_postcard_is_frozen_preview_and_exact_explicit_save(
+    tmp_path: Path, lang: str
+) -> None:
+    """One borrowed photo is framed once; saving commits its identical preview bytes."""
+    f = booth_fixture(tmp_path)
+    write_state(
+        f.path,
+        stage="keepsake",
+        prop=None,
+        photo="capture",
+        style="postcard",
+        lang=lang,
+    )
+    original = f.frame.return_value.copy()
+    capture(f)
+    encoded = base64.b64decode(f.events[-1][1]["image"])
+    decoded = cv2.imdecode(np.frombuffer(encoded, np.uint8), cv2.IMREAD_COLOR)
+    assert f.frame.call_count == 1
+    assert np.array_equal(f.frame.return_value, original)
+    assert decoded.shape == (808, 1160, 3)
+    assert f.booth.preview_style == "postcard"
+    assert not f.directory.exists()
+    write_state(
+        f.path,
+        revision=5,
+        stage="keepsake",
+        prop=None,
+        photo="save",
+        now=105,
+        style="postcard",
+        lang=lang,
+    )
+    f.booth.process_frame(f.frame, 105, 5)
+    assert f.frame.call_count == 1
+    assert list(f.directory.iterdir())[0].read_bytes() == encoded
+    assert f.events[-1][1]["status"] == "saved"
+
+
+def test_style_cannot_reframe_old_capture_or_save_mismatched_preview(
+    tmp_path: Path,
+) -> None:
+    """A different style needs a new capture revision, never posthoc editing on save."""
+    f = booth_fixture(tmp_path)
+    capture(f)
+    write_state(
+        f.path,
+        revision=5,
+        stage="keepsake",
+        prop=None,
+        photo="save",
+        now=105,
+        style="postcard",
+    )
+    f.booth.process_frame(f.frame, 105, 5)
+    assert f.events[-1][1]["status"] == "unavailable"
+    assert not f.directory.exists() and not f.booth.preview
+    assert f.frame.call_count == 1
+
+
+def test_style_change_during_countdown_requires_new_capture_revision(
+    tmp_path: Path,
+) -> None:
+    """A same-revision style mutation cannot turn plain-photo consent into a postcard."""
+    f = booth_fixture(tmp_path)
+    f.booth.process_frame(f.frame, 100, 0)
+    write_state(f.path, stage="keepsake", prop=None, photo="capture", style="postcard")
+    f.booth.process_frame(f.frame, 103, 3)
+    f.booth.process_frame(f.frame, 104, 4)
+    assert not f.frame.called and not f.booth.preview
+    write_state(
+        f.path,
+        revision=5,
+        capture_revision=5,
+        stage="keepsake",
+        prop=None,
+        photo="capture",
+        now=105,
+        style="postcard",
+    )
+    f.booth.process_frame(f.frame, 105, 5)
+    f.booth.process_frame(f.frame, 108, 8)
+    assert f.frame.call_count == 1 and f.booth.preview_style == "postcard"
+
+
+def test_style_change_while_compositing_discards_inflight_pixels(
+    tmp_path: Path,
+) -> None:
+    """The final source check binds the composite to the still-current opted-in style."""
+    f = booth_fixture(tmp_path)
+    write_state(f.path, stage="keepsake", prop=None, photo="capture", style="postcard")
+    f.booth.process_frame(f.frame, 100, 0)
+
+    def change_style() -> np.ndarray:
+        """Simulate a newer conflicting source arriving during the capture callback."""
+        write_state(
+            f.path, stage="keepsake", prop=None, photo="capture", style="plain", now=103
+        )
+        return pixels()
+
+    f.booth.process_frame(change_style, 103, 3)
+    assert not f.booth.preview and not f.directory.exists()
+
+
+def test_invalid_postcard_timezone_fails_photo_without_worker_exception(
+    tmp_path: Path,
+) -> None:
+    """Missing IANA data cannot silently stamp a wrong date or save a replacement."""
+    f = booth_fixture(tmp_path)
+    f.booth.timezone = "Mars/NorthPole"
+    write_state(f.path, stage="keepsake", prop=None, photo="capture", style="postcard")
+    capture(f)
+    assert f.events[-1][1]["status"] == "unavailable"
+    assert not f.booth.preview and not f.directory.exists()
+
+
+def test_postcard_to_plain_retake_uses_new_revision_and_original_photo_shape(
+    tmp_path: Path,
+) -> None:
+    """Switching style needs a new explicit capture, never an edit of old bytes."""
+    f = booth_fixture(tmp_path)
+    write_state(f.path, stage="keepsake", prop=None, photo="capture", style="postcard")
+    capture(f)
+    postcard_bytes = f.booth.preview
+    write_state(
+        f.path,
+        revision=5,
+        capture_revision=5,
+        stage="keepsake",
+        prop=None,
+        photo="capture",
+        style="plain",
+        now=105,
+    )
+    f.booth.process_frame(f.frame, 105, 5)
+    assert f.booth.preview is None
+    f.booth.process_frame(f.frame, 108, 8)
+    assert f.frame.call_count == 2 and f.booth.preview_style == "plain"
+    assert f.booth.preview != postcard_bytes
+    decoded = cv2.imdecode(np.frombuffer(f.booth.preview, np.uint8), cv2.IMREAD_COLOR)
+    assert decoded.shape == (675, 1200, 3)
+    ok, expected = cv2.imencode(
+        ".jpg",
+        cv2.resize(f.frame.return_value, (1200, 675)),
+        [cv2.IMWRITE_JPEG_QUALITY, 85],
+    )
+    assert ok and f.booth.preview == expected.tobytes()
+
+
+def test_legacy_style_defaults_plain_and_invalid_language_is_closed(
+    tmp_path: Path,
+) -> None:
+    """Older producer states retain plain behavior; malformed locale cannot drive text."""
+    f = booth_fixture(tmp_path)
+    view = experience_view(f.path, 100)
+    assert view and view.photo_style == "plain" and view.lang == "en-US"
+    value = json.loads(f.path.read_text())
+    del value["state"]["lang"]
+    f.path.write_text(json.dumps(value))
+    assert experience_view(f.path, 100).lang == "en-US"
+    value["state"]["lang"] = ["fr-FR"]
+    f.path.write_text(json.dumps(value))
+    assert experience_view(f.path, 100) is None
 
 
 def test_photo_waits_for_listening_and_does_not_capture_over_speech(

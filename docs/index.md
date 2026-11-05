@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add expected Christmas prop observations and explicit memory-only keepsake previews.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add opt-in dated North Pole postcards with unchanged explicit photo consent.
 
 # Installation and configuration
 
@@ -164,6 +164,13 @@ exactly matches the native capture target. Skipping a retake revision while
 polling can therefore never save an older photo. A restart cannot save a lost
 preview. Exit, off, stale state, pause and discard release uncommitted bytes.
 
+A new worker's first observed action may be an old persisted capture with fresh
+bridge heartbeats. `PhotoBooth.process_frame()` consumes that revision and emits
+unavailable without requesting pixels. Repeated heartbeats and reset cannot
+revive it; a new explicit capture revision is required. Observing a ready
+non-capture scene or off state first arms ordinary future capture. This guard
+does not create a durable photo store or recover lost preview bytes.
+
 `Print.printJson('christmas_photo', payload)` is validated by
 [node_helper.js](../node_helper.js) before the [frontend](../MMM-Face-Reco-DNN.js)
 forwards `CHRISTMAS_PHOTO_STATUS`. Payload keys are version/revision/status,
@@ -173,6 +180,44 @@ bytes are capped at 500000 and the entire public event below 700000 bytes.
 No filename, label, gallery data, transcript or control credential is sent.
 The [Christmas renderer](../../MMM-Thalovant-ChristmasProtocol/docs/index.md)
 checks the known sender and current action/capture revision before showing it.
+
+### Optional North Pole postcard
+
+`ExperienceView` in [experience_state.py](../tools/utils/experience_state.py)
+accepts optional keepsake-only `photo_style:'plain'|'postcard'`. An absent field
+means plain. The authenticated native producer offers “take Christmas postcard”
+and “prends la carte postale de Noël” separately from ordinary photo capture.
+See [Christmas Protocol: ExperienceDirector](../../thalovant-skill-christmas-protocol/docs/experience.md)
+and [its bridge contract](../../thalovant-skill-christmas-protocol/docs/bridge.md).
+The camera never chooses a new style when saving an existing preview.
+
+On explicit postcard capture, [PhotoBooth.process_frame](../tools/utils/experience_camera.py)
+calls [render_postcard](../tools/utils/postcard.py) once on the shared current
+frame. The compositor preserves the complete photo with proportional resizing,
+adds an ivory mat, fine evergreen/gold lines and original postal artwork outside
+it, and renders `NORTH POLE` or `PÔLE NORD`. Locale prefixes `fr` select the French
+caption and numeric date order; other well-formed source locales use English.
+The circumflex is drawn as a vector, so no new fonts, external images, Pillow
+or font downloads are required at runtime.
+
+The trusted capture timestamp is converted with stdlib `zoneinfo` using optional
+`christmasPhotoTimezone:'America/Toronto'`. Set another available IANA zone such
+as `Europe/Paris` in the existing module config if needed. The system timezone
+database must contain it; invalid/unavailable configured zones fail argument
+validation. The host's ambient timezone is not used to guess the family date.
+Both date and artwork are frozen into the preview JPEG before publication and
+the exact bytes are saved after explicit consent. A style change needs another
+capture revision; mismatched previews and style changes during capture are
+discarded. All existing identity, freshness, listening and retake guards remain.
+
+The complete postcard stays below the existing 1200-pixel dimension and
+500000-byte JPEG limits. Rendering runs only on explicit postcard capture,
+not on every frame, polling update or save. Plain capture uses the existing
+encoding path. [Postcard tests](../tests/test_postcard.py) and
+[PhotoBooth tests](../tests/test_experience_camera.py) use synthetic pixels and
+fixed dates, including Toronto/Paris midnight boundaries and exact preview/save
+byte equality. Source tests and synthetic visual review do not measure a real
+camera's exposure, sharpness or room lighting.
 
 [Camera/gateway regressions](../tests/test_experience_camera.py),
 [worker ownership checks](../tests/test_runtime.py), and

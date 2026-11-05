@@ -1,4 +1,4 @@
-Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add expected Christmas prop observations and explicit memory-only keepsake previews.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add opt-in dated North Pole postcards with unchanged explicit photo consent.
 
 # MMM-Face-Reco-DNN — CPU/ISP performance fork
 
@@ -81,3 +81,25 @@ persistent writeable mount there. The saved image is separate from enrollment.
 describes mount paths, UID ownership and the current-action/capture-revision
 contract. Local tests use synthetic pixels; no physical camera or family photo
 was used during implementation.
+
+## 2.4.0 North Pole postcard preview
+
+At the keepsake scene, choose “take Christmas postcard” or “prends la carte
+postale de Noël” for an ivory, evergreen and gold North Pole frame with the
+local capture date. A plain photo remains a separate choice. Both use the
+existing countdown, preview, retake, save and discard flow; only an explicit
+save writes the exact JPEG you previewed. The date is fixed at capture, even
+if you save after midnight.
+
+A restarted camera worker consumes an already-pending capture without taking
+another photo. Choose a fresh retake after the camera is ready; ordinary
+capture after an observed ready scene works as before.
+
+[`render_postcard`](tools/utils/postcard.py) adds original vector artwork and
+English or French lettering outside the complete photo, using existing OpenCV
+and NumPy. It adds no camera, font package or face enrollment. The optional
+`christmasPhotoTimezone` uses an installed IANA timezone and defaults to
+`America/Toronto`; install system timezone data if the camera image lacks it.
+The native producer and display bridge must support optional
+`experience.photo_style`. Older states without that field retain plain photos.
+See [the postcard contract](docs/index.md#optional-north-pole-postcard).

@@ -5,6 +5,7 @@ import math
 import sys
 from pathlib import Path
 from typing import Any, Sequence
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Retain imports by legacy standalone scripts that put tools/ on sys.path.
 if __package__ == "utils":
@@ -108,6 +109,11 @@ class Arguments:
             default=None,
             help="Private owned photo folder; created only after an explicit Christmas photo save",
         )
+        parser.add_argument(
+            "--christmasPhotoTimezone",
+            default="America/Toronto",
+            help="IANA timezone for the capture date on explicitly requested postcards",
+        )
         parsed = vars(parser.parse_args(argv))
         if parsed["interval"] <= 0:
             parser.error("interval must be positive")
@@ -126,6 +132,10 @@ class Arguments:
             and not Path(parsed["christmasPhotoDirectory"]).is_absolute()
         ):
             parser.error("christmasPhotoDirectory must be absolute")
+        try:
+            ZoneInfo(parsed["christmasPhotoTimezone"])
+        except (ValueError, ZoneInfoNotFoundError):
+            parser.error("christmasPhotoTimezone must be an available IANA timezone")
         if not 0 < parsed["tolerance"] <= 2 or not 0 <= parsed["identityMargin"] <= 2:
             parser.error("tolerance and identityMargin are outside their valid ranges")
         Arguments.args = parsed

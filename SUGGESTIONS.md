@@ -1,6 +1,29 @@
-Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Record live Christmas experience 2.3.0 activation.
+Last Edit: Codex (GPT-6) - 2026-11-05 - Motive: Add opt-in dated North Pole postcards with unchanged explicit photo consent.
 
 # Proposed follow-up work
+
+## 2026-11-05 — Postcard polish follow-through
+
+- **Implemented correction:** A newly started worker no longer replays an
+  already-pending capture from fresh bridge heartbeats. Preserve the startup
+  observation and explicit-retake regressions in [photo tests](tests/test_experience_camera.py).
+  **Impact:** Restart cannot silently retake the first persisted action.
+
+- **Implemented opportunity:** An explicit family-photo keepsake can now use
+  [render_postcard](tools/utils/postcard.py) for a dated EN/FR North Pole frame.
+  [PhotoBooth](tools/utils/experience_camera.py) retains the same preview bytes
+  until explicit save; plain photos and existing consent controls remain.
+- **Problem/opportunity:** Synthetic previews cannot establish room exposure,
+  framing or capture latency on the Pi. **Proposal:** After coordinated release
+  and operator consent, rehearse one postcard preview, retake and discard using
+  existing camera settings; save only if explicitly requested. **Impact:** Confirms
+  the offered local keepsake without changing autofocus or face enrollment.
+- **Problem/opportunity:** Minimal container images may omit system IANA data.
+  **Proposal:** Include `ZoneInfo('America/Toronto')` in deployment preflight and
+  preserve the chosen `christmasPhotoTimezone`. **Impact:** Prevents wrong dates
+  or a failed camera-worker start without adding runtime Python dependencies.
+
+## Existing follow-up backlog
 
 | Problem/opportunity | Proposal | Estimated impact |
 |---|---|---|
